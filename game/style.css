@@ -1,0 +1,1106 @@
+/* ==========================================================================
+   WAR OF THE IMPERIUM - ESTILOS VISUAIS (WARHAMMER 40K THEME)
+   Estética: Gótico Imperial, Militar Futurista, Metalurgia Pesada, Vermelho e Ouro
+   ========================================================================== */
+
+:root {
+  --color-bg-dark: #07090b;
+  --color-panel-bg: rgba(13, 16, 22, 0.92);
+  --color-panel-border: #3b4252;
+  --color-metal-rim: #656d7d;
+  
+  --color-gold-bright: #f3ce70;
+  --color-gold-mid: #cda851;
+  --color-gold-dark: #7b6228;
+  
+  --color-crimson-bright: #ff3344;
+  --color-crimson-mid: #b81b24;
+  --color-crimson-dark: #5e0b10;
+
+  --color-plasma-blue: #00e5ff;
+  --color-plasma-glow: rgba(0, 229, 255, 0.5);
+
+  --color-hp-green: #2fe060;
+  --color-armor-blue: #38bdf8;
+  --color-text-parchment: #e2dcd2;
+  --color-text-muted: #8b929e;
+
+  --font-gothic: 'Cinzel', serif, 'Times New Roman';
+  --font-scifi: 'Orbitron', sans-serif, system-ui;
+  --font-tactical: 'Share Tech Mono', monospace, Consolas;
+
+  --shadow-heavy: 0 10px 30px rgba(0, 0, 0, 0.85);
+  --border-bevel: 2px solid var(--color-gold-mid);
+}
+
+/* Reset Básico */
+* {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+html, body {
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  background-color: var(--color-bg-dark);
+  font-family: var(--font-gothic);
+  color: var(--color-text-parchment);
+}
+
+/* Container do Jogo */
+#game-container {
+  position: relative;
+  width: 100vw;
+  height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: radial-gradient(circle at center, #141822 0%, #050608 100%);
+  overflow: hidden;
+}
+
+/* Canvas do Jogo */
+#gameCanvas {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  display: block;
+  cursor: crosshair;
+  background-color: #0b0d11;
+}
+
+/* Efeito de Vinheta e Flash de Dano */
+.vignette {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  box-shadow: inset 0 0 120px rgba(0, 0, 0, 0.9);
+  transition: box-shadow 0.2s ease-out;
+  z-index: 10;
+}
+
+.vignette.hurt {
+  box-shadow: inset 0 0 140px rgba(220, 20, 30, 0.85);
+}
+
+.screen-flash {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background-color: transparent;
+  z-index: 11;
+  transition: background-color 0.15s ease-out;
+}
+
+.screen-flash.flash-red {
+  background-color: rgba(184, 27, 36, 0.35);
+}
+
+.screen-flash.flash-cyan {
+  background-color: rgba(0, 229, 255, 0.25);
+}
+
+/* ==========================================================================
+   CAMADA DA HUD DE COMBATE
+   ========================================================================== */
+.hud-layer {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  z-index: 20;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  padding: 16px 24px;
+}
+
+.hud-layer.hidden {
+  display: none !important;
+}
+
+/* Painéis HUD comuns */
+.hud-panel {
+  background: var(--color-panel-bg);
+  border: 1px solid var(--color-metal-rim);
+  position: relative;
+  box-shadow: var(--shadow-heavy);
+  backdrop-filter: blur(4px);
+}
+
+.text-gold { color: var(--color-gold-bright) !important; text-shadow: 0 0 8px rgba(243, 206, 112, 0.4); }
+.text-crimson { color: var(--color-crimson-bright) !important; text-shadow: 0 0 8px rgba(255, 51, 68, 0.4); }
+.text-cyan { color: var(--color-plasma-blue) !important; text-shadow: 0 0 8px var(--color-plasma-glow); }
+.text-electric { color: #85d7ff !important; text-shadow: 0 0 8px rgba(133, 215, 255, 0.6); }
+
+/* Topo da HUD */
+.hud-top {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 20px;
+  width: 100%;
+}
+
+.wave-panel {
+  display: flex;
+  align-items: center;
+  padding: 8px 18px;
+  clip-path: polygon(0 0, 100% 0, 92% 100%, 8% 100%);
+  border-top: 3px solid var(--color-gold-mid);
+}
+
+.hud-label {
+  display: block;
+  font-family: var(--font-tactical);
+  font-size: 11px;
+  letter-spacing: 2px;
+  color: var(--color-text-muted);
+}
+
+.hud-value-large {
+  font-family: var(--font-scifi);
+  font-size: 20px;
+  font-weight: 800;
+  letter-spacing: 3px;
+}
+
+.hud-value-mono {
+  font-family: var(--font-tactical);
+  font-size: 18px;
+  font-weight: 700;
+  letter-spacing: 1px;
+}
+
+.objective-panel {
+  flex: 1;
+  max-width: 500px;
+  padding: 8px 16px;
+  border-left: 3px solid var(--color-crimson-mid);
+  clip-path: polygon(4% 0, 100% 0, 96% 100%, 0% 100%);
+}
+
+.objective-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 2px;
+}
+
+.status-light {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background-color: var(--color-crimson-bright);
+}
+
+.blink-red {
+  animation: pulse-light 1.2s infinite ease-in-out;
+}
+
+@keyframes pulse-light {
+  0%, 100% { opacity: 0.3; transform: scale(0.9); }
+  50% { opacity: 1; transform: scale(1.1); box-shadow: 0 0 8px var(--color-crimson-bright); }
+}
+
+.objective-text {
+  font-family: var(--font-tactical);
+  font-size: 14px;
+  color: #fff;
+  letter-spacing: 1px;
+  text-shadow: 0 0 4px rgba(255, 255, 255, 0.4);
+}
+
+.score-panel {
+  padding: 8px 20px;
+  clip-path: polygon(8% 0, 100% 0, 100% 100%, 0 100%);
+  border-top: 3px solid var(--color-gold-mid);
+}
+
+.score-data {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.score-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 14px;
+}
+
+/* BARRA DE VIDA DO BOSS (ONDA 5) */
+.boss-bar-container {
+  position: absolute;
+  top: 76px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: min(720px, 90vw);
+  background: rgba(15, 5, 8, 0.95);
+  border: 2px solid var(--color-crimson-mid);
+  padding: 8px 14px;
+  box-shadow: 0 0 25px rgba(220, 20, 30, 0.6);
+  clip-path: polygon(3% 0, 97% 0, 100% 100%, 0 100%);
+  animation: slide-boss-bar 0.6s cubic-bezier(0.18, 0.89, 0.32, 1.28);
+}
+
+@keyframes slide-boss-bar {
+  from { opacity: 0; transform: translate(-50%, -30px); }
+  to { opacity: 1; transform: translate(-50%, 0); }
+}
+
+.boss-bar-header {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 6px;
+}
+
+.skull-icon {
+  color: var(--color-crimson-bright);
+  font-size: 16px;
+  animation: pulse-light 1s infinite alternate;
+}
+
+.boss-title {
+  font-family: var(--font-scifi);
+  font-size: 14px;
+  font-weight: 800;
+  letter-spacing: 3px;
+  color: #ff9999;
+  text-shadow: 0 0 10px rgba(255, 50, 50, 0.7);
+}
+
+.boss-health-frame {
+  position: relative;
+  width: 100%;
+  height: 18px;
+  background-color: #2a080c;
+  border: 1px solid var(--color-gold-mid);
+  overflow: hidden;
+}
+
+.boss-health-fill {
+  height: 100%;
+  background: linear-gradient(90deg, #990011 0%, #ff2233 70%, #ff7788 100%);
+  box-shadow: inset 0 0 10px rgba(0, 0, 0, 0.6), 0 0 15px rgba(255, 30, 30, 0.8);
+  transition: width 0.15s ease-out;
+}
+
+/* MINIMAPA */
+.minimap-container {
+  position: absolute;
+  top: 86px;
+  right: 24px;
+  pointer-events: auto;
+}
+
+.minimap-frame {
+  background: rgba(10, 12, 16, 0.92);
+  border: 2px solid var(--color-metal-rim);
+  border-top: 3px solid var(--color-gold-mid);
+  box-shadow: var(--shadow-heavy);
+  padding: 6px;
+  position: relative;
+  border-radius: 4px;
+}
+
+.minimap-bezel-top {
+  font-family: var(--font-tactical);
+  font-size: 10px;
+  letter-spacing: 2px;
+  color: var(--color-gold-mid);
+  text-align: center;
+  margin-bottom: 4px;
+}
+
+#minimapCanvas {
+  display: block;
+  background-color: #0d1117;
+  border: 1px solid #2d3748;
+}
+
+.minimap-legend {
+  display: flex;
+  justify-content: space-around;
+  margin-top: 5px;
+  font-family: var(--font-tactical);
+  font-size: 9px;
+  color: var(--color-text-muted);
+}
+
+.leg-item {
+  display: flex;
+  align-items: center;
+  gap: 3px;
+}
+
+.dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  display: inline-block;
+}
+
+.dot-marine { background-color: var(--color-gold-bright); box-shadow: 0 0 4px var(--color-gold-bright); }
+.dot-enemy { background-color: var(--color-crimson-bright); box-shadow: 0 0 4px var(--color-crimson-bright); }
+.dot-extract { background-color: var(--color-plasma-blue); box-shadow: 0 0 4px var(--color-plasma-blue); }
+
+/* SETA DE DIREÇÃO PARA EXTRAÇÃO */
+.extraction-pointer {
+  position: absolute;
+  bottom: 120px;
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  pointer-events: none;
+  animation: bounce-pointer 1s infinite alternate ease-in-out;
+}
+
+@keyframes bounce-pointer {
+  from { transform: translate(-50%, 0); }
+  to { transform: translate(-50%, -12px); }
+}
+
+.pointer-arrow {
+  color: var(--color-plasma-blue);
+  font-size: 26px;
+  text-shadow: 0 0 15px var(--color-plasma-blue);
+}
+
+.pointer-text {
+  font-family: var(--font-scifi);
+  font-size: 13px;
+  letter-spacing: 3px;
+  color: #fff;
+  background: rgba(0, 30, 45, 0.85);
+  border: 1px solid var(--color-plasma-blue);
+  padding: 4px 12px;
+  border-radius: 3px;
+  box-shadow: 0 0 12px rgba(0, 229, 255, 0.4);
+}
+
+/* RODAPÉ DA HUD: ESQUERDA (VIDA & ARMADURA) */
+.hud-bottom-left {
+  display: flex;
+  align-items: flex-end;
+}
+
+.marine-vitals-panel {
+  background: var(--color-panel-bg);
+  border: 1px solid var(--color-metal-rim);
+  border-left: 4px solid var(--color-gold-mid);
+  padding: 12px 18px;
+  min-width: 320px;
+  box-shadow: var(--shadow-heavy);
+  clip-path: polygon(0 0, 95% 0, 100% 100%, 0% 100%);
+}
+
+.marine-badge {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 8px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+  padding-bottom: 4px;
+}
+
+.marine-rank {
+  font-family: var(--font-gothic);
+  font-size: 11px;
+  letter-spacing: 3px;
+  color: var(--color-gold-mid);
+  font-weight: 700;
+}
+
+.vital-group {
+  margin-bottom: 8px;
+}
+
+.vital-group:last-child {
+  margin-bottom: 0;
+}
+
+.vital-info {
+  display: flex;
+  justify-content: space-between;
+  font-family: var(--font-tactical);
+  font-size: 13px;
+  font-weight: 700;
+  margin-bottom: 3px;
+}
+
+.vital-bar-track {
+  width: 100%;
+  height: 14px;
+  background-color: #14171d;
+  border: 1px solid #333a48;
+  position: relative;
+  overflow: hidden;
+}
+
+.vital-bar-fill {
+  height: 100%;
+  transition: width 0.2s cubic-bezier(0.1, 0.7, 0.1, 1);
+}
+
+.hp-fill {
+  background: linear-gradient(90deg, #1b8a36 0%, #2fe060 100%);
+  box-shadow: inset 0 0 6px rgba(0, 0, 0, 0.6), 0 0 8px rgba(47, 224, 96, 0.4);
+}
+
+.armor-fill {
+  background: linear-gradient(90deg, #1b638a 0%, #38bdf8 100%);
+  box-shadow: inset 0 0 6px rgba(0, 0, 0, 0.6), 0 0 8px rgba(56, 189, 248, 0.4);
+}
+
+/* RODAPÉ DA HUD: DIREITA (ARMAS & MUNIÇÃO) */
+.hud-bottom-right {
+  display: flex;
+  align-items: flex-end;
+}
+
+.weapons-panel {
+  background: var(--color-panel-bg);
+  border: 1px solid var(--color-metal-rim);
+  border-right: 4px solid var(--color-gold-mid);
+  padding: 12px 18px;
+  min-width: 320px;
+  box-shadow: var(--shadow-heavy);
+  clip-path: polygon(5% 0, 100% 0, 100% 100%, 0% 100%);
+}
+
+.weapon-slots {
+  display: flex;
+  gap: 6px;
+  margin-bottom: 10px;
+}
+
+.weapon-slot {
+  flex: 1;
+  padding: 4px 6px;
+  background: #141822;
+  border: 1px solid #2d3542;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  transition: all 0.2s ease;
+  opacity: 0.65;
+}
+
+.weapon-slot.active {
+  opacity: 1;
+  border-color: var(--color-gold-bright);
+  background: linear-gradient(180deg, #242c3d 0%, #151a24 100%);
+  box-shadow: 0 0 8px rgba(243, 206, 112, 0.3);
+}
+
+.keybind {
+  font-family: var(--font-tactical);
+  font-size: 10px;
+  color: var(--color-text-muted);
+}
+
+.slot-name {
+  font-family: var(--font-scifi);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 1px;
+}
+
+.weapon-title-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  margin-bottom: 4px;
+}
+
+.current-weapon-title {
+  font-family: var(--font-scifi);
+  font-size: 16px;
+  font-weight: 800;
+  letter-spacing: 2px;
+  color: var(--color-gold-bright);
+}
+
+.reload-status {
+  font-family: var(--font-tactical);
+  font-size: 12px;
+  color: #38e078;
+}
+
+.reload-status.reloading {
+  color: var(--color-crimson-bright);
+  animation: pulse-light 0.6s infinite alternate;
+}
+
+.ammo-row {
+  display: flex;
+  justify-content: space-between;
+  font-family: var(--font-tactical);
+  font-size: 13px;
+  margin-bottom: 3px;
+}
+
+.ammo-digits {
+  font-weight: 700;
+  font-size: 16px;
+  color: #fff;
+  letter-spacing: 1px;
+}
+
+.ammo-visual-bar {
+  width: 100%;
+  height: 8px;
+  background-color: #14171d;
+  border: 1px solid #333a48;
+  overflow: hidden;
+}
+
+.ammo-fill {
+  height: 100%;
+  background: linear-gradient(90deg, #cda851 0%, #f3ce70 100%);
+  transition: width 0.1s ease-out;
+}
+
+/* ==========================================================================
+   TELAS DE SOBREPOSIÇÃO (MENU INICIAL, PAUSA, GAME OVER, VITÓRIA)
+   ========================================================================== */
+.screen-overlay {
+  position: absolute;
+  inset: 0;
+  z-index: 50;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(5, 7, 10, 0.88);
+  backdrop-filter: blur(6px);
+  transition: opacity 0.3s ease;
+}
+
+.screen-overlay.hidden {
+  display: none !important;
+}
+
+/* TELA INICIAL */
+#screen-title {
+  background: #06080b;
+}
+
+.title-bg-scenery {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  pointer-events: none;
+}
+
+.city-silhouettes {
+  position: absolute;
+  bottom: 0;
+  width: 100%;
+  height: 45%;
+  background: 
+    linear-gradient(to top, rgba(15, 18, 24, 0.95) 0%, transparent 100%),
+    repeating-linear-gradient(90deg, #090c12 0px, #090c12 40px, transparent 40px, transparent 80px);
+  opacity: 0.6;
+}
+
+.red-fog {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  width: 100%;
+  height: 60%;
+  background: radial-gradient(ellipse at bottom, rgba(184, 27, 36, 0.35) 0%, transparent 70%);
+  pointer-events: none;
+}
+
+.dust-canvas-wrapper {
+  position: absolute;
+  inset: 0;
+}
+
+#dustCanvas {
+  width: 100%;
+  height: 100%;
+  display: block;
+}
+
+.title-content-card {
+  position: relative;
+  z-index: 10;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  max-width: 620px;
+  padding: 30px 40px;
+  background: rgba(13, 16, 22, 0.85);
+  border: 2px solid var(--color-gold-mid);
+  box-shadow: 0 0 50px rgba(0, 0, 0, 0.9), inset 0 0 30px rgba(0, 0, 0, 0.8);
+  border-radius: 4px;
+}
+
+.imperial-eagle-crest {
+  font-size: 38px;
+  color: var(--color-gold-bright);
+  margin-bottom: 6px;
+  text-shadow: 0 0 15px rgba(243, 206, 112, 0.6);
+}
+
+.main-title {
+  font-family: var(--font-gothic);
+  font-size: clamp(28px, 5vw, 46px);
+  font-weight: 900;
+  letter-spacing: 6px;
+  color: #fff;
+  text-shadow: 
+    0 2px 0 var(--color-gold-dark),
+    0 4px 15px rgba(243, 206, 112, 0.4),
+    0 0 30px rgba(184, 27, 36, 0.8);
+  margin-bottom: 10px;
+}
+
+.tagline {
+  font-family: var(--font-gothic);
+  font-style: italic;
+  font-size: 14px;
+  letter-spacing: 2px;
+  color: #c9cbcf;
+  margin-bottom: 18px;
+  text-shadow: 0 1px 3px #000;
+}
+
+.menu-divider {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  gap: 15px;
+  margin-bottom: 24px;
+}
+
+.divider-line {
+  flex: 1;
+  height: 1px;
+  background: linear-gradient(90deg, transparent, var(--color-gold-mid), transparent);
+}
+
+.divider-symbol {
+  color: var(--color-gold-bright);
+  font-size: 16px;
+}
+
+.title-buttons {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  width: 100%;
+}
+
+.title-footer {
+  margin-top: 25px;
+  font-family: var(--font-tactical);
+  font-size: 10px;
+  letter-spacing: 4px;
+  color: var(--color-gold-mid);
+  opacity: 0.8;
+}
+
+/* BOTÕES ESTILO IMPERIAL / CERAMITE */
+.btn-imperial {
+  position: relative;
+  background: linear-gradient(180deg, #242a38 0%, #131720 100%);
+  border: 1px solid var(--color-metal-rim);
+  border-left: 3px solid var(--color-gold-mid);
+  border-right: 3px solid var(--color-gold-mid);
+  color: #fff;
+  padding: 12px 24px;
+  cursor: pointer;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.25s cubic-bezier(0.2, 0.8, 0.2, 1);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.5);
+  clip-path: polygon(4% 0, 96% 0, 100% 50%, 96% 100%, 4% 100%, 0% 50%);
+}
+
+.btn-imperial:hover {
+  background: linear-gradient(180deg, #374155 0%, #1c2331 100%);
+  border-color: var(--color-gold-bright);
+  box-shadow: 0 0 20px rgba(243, 206, 112, 0.4);
+  transform: translateY(-2px);
+}
+
+.btn-imperial:active {
+  transform: translateY(1px);
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.7);
+}
+
+.btn-imperial .btn-text {
+  font-family: var(--font-scifi);
+  font-size: 14px;
+  font-weight: 800;
+  letter-spacing: 3px;
+  color: var(--color-gold-bright);
+}
+
+.btn-imperial .btn-subtext {
+  font-family: var(--font-tactical);
+  font-size: 9px;
+  letter-spacing: 2px;
+  color: var(--color-text-muted);
+  margin-top: 2px;
+}
+
+.btn-primary {
+  border-color: var(--color-gold-bright);
+  background: linear-gradient(180deg, #3a2e15 0%, #1f1809 100%);
+}
+
+.btn-primary:hover {
+  background: linear-gradient(180deg, #57441d 0%, #2e230d 100%);
+}
+
+.btn-secondary {
+  padding: 10px 20px;
+}
+
+.btn-danger {
+  border-color: var(--color-crimson-mid);
+  background: linear-gradient(180deg, #3d1417 0%, #20080a 100%);
+}
+
+.btn-danger:hover {
+  background: linear-gradient(180deg, #591b20 0%, #2e0b0e 100%);
+  border-color: var(--color-crimson-bright);
+  box-shadow: 0 0 20px rgba(255, 51, 68, 0.4);
+}
+
+/* ==========================================================================
+   MODAIS E CARDS (COMO JOGAR, CONFIGS, PAUSA, GAME OVER, VITÓRIA)
+   ========================================================================== */
+.modal-overlay {
+  position: absolute;
+  inset: 0;
+  z-index: 60;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(0, 0, 0, 0.85);
+  backdrop-filter: blur(8px);
+}
+
+.modal-overlay.hidden {
+  display: none !important;
+}
+
+.imperial-box {
+  background: var(--color-panel-bg);
+  border: 2px solid var(--color-gold-mid);
+  box-shadow: 0 0 40px rgba(0, 0, 0, 0.95);
+  padding: 24px 30px;
+  width: min(650px, 92vw);
+  max-height: 88vh;
+  overflow-y: auto;
+  border-radius: 4px;
+  position: relative;
+}
+
+.modal-header {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  border-bottom: 1px solid var(--color-gold-dark);
+  padding-bottom: 12px;
+  margin-bottom: 18px;
+}
+
+.modal-header h2 {
+  font-family: var(--font-scifi);
+  font-size: 18px;
+  font-weight: 800;
+  letter-spacing: 3px;
+  color: var(--color-gold-bright);
+  text-align: center;
+}
+
+.skull-sm {
+  color: var(--color-gold-mid);
+  font-size: 18px;
+}
+
+.modal-body {
+  font-family: var(--font-tactical);
+  font-size: 13px;
+  line-height: 1.6;
+  color: var(--color-text-parchment);
+}
+
+.modal-footer {
+  margin-top: 20px;
+  display: flex;
+  justify-content: center;
+  gap: 16px;
+  border-top: 1px solid rgba(255, 255, 255, 0.1);
+  padding-top: 16px;
+}
+
+/* CONTEÚDO DO MANUAL (COMO JOGAR) */
+.manual-section {
+  margin-bottom: 18px;
+}
+
+.manual-section h3 {
+  font-family: var(--font-scifi);
+  font-size: 13px;
+  letter-spacing: 2px;
+  color: var(--color-gold-bright);
+  margin-bottom: 8px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.control-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  gap: 8px;
+}
+
+.ctrl-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background: rgba(255, 255, 255, 0.03);
+  padding: 6px 10px;
+  border-left: 2px solid var(--color-metal-rim);
+}
+
+kbd {
+  background: #1e2533;
+  border: 1px solid var(--color-gold-mid);
+  color: var(--color-gold-bright);
+  font-family: var(--font-tactical);
+  font-size: 11px;
+  padding: 2px 6px;
+  border-radius: 3px;
+  box-shadow: 0 2px 0 #0b0e14;
+}
+
+.weapon-manual-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.w-card {
+  background: rgba(255, 255, 255, 0.03);
+  padding: 8px 12px;
+  border-left: 2px solid var(--color-gold-mid);
+}
+
+.w-title {
+  display: block;
+  font-family: var(--font-scifi);
+  font-weight: 700;
+  font-size: 12px;
+  margin-bottom: 3px;
+}
+
+.enemy-manual-list p {
+  margin-bottom: 4px;
+}
+
+/* CONFIGURAÇÕES */
+.settings-content {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.setting-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.slider-group {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+input[type="range"] {
+  accent-color: var(--color-gold-bright);
+  cursor: pointer;
+}
+
+input[type="checkbox"] {
+  width: 18px;
+  height: 18px;
+  accent-color: var(--color-gold-bright);
+  cursor: pointer;
+}
+
+/* PAUSE CARD */
+.pause-card {
+  max-width: 440px;
+  text-align: center;
+}
+
+.pause-lore {
+  font-style: italic;
+  font-size: 12px;
+  color: var(--color-text-muted);
+  margin-bottom: 20px;
+}
+
+.pause-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+/* GAME OVER CARD */
+.game-over-card {
+  max-width: 480px;
+  text-align: center;
+  border-color: var(--color-crimson-mid);
+  box-shadow: 0 0 50px rgba(184, 27, 36, 0.5);
+}
+
+.header-fallen h2 {
+  color: var(--color-crimson-bright);
+}
+
+.fallen-quote {
+  font-style: italic;
+  font-size: 13px;
+  color: #ff9999;
+  margin-bottom: 20px;
+}
+
+.stats-summary-box {
+  display: flex;
+  justify-content: space-around;
+  background: rgba(0, 0, 0, 0.5);
+  border: 1px solid var(--color-metal-rim);
+  padding: 14px;
+  margin-bottom: 16px;
+}
+
+.stat-cell {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.stat-title {
+  font-family: var(--font-tactical);
+  font-size: 10px;
+  color: var(--color-text-muted);
+}
+
+.stat-value {
+  font-family: var(--font-scifi);
+  font-size: 18px;
+  font-weight: 800;
+}
+
+/* VITÓRIA (MISSION COMPLETE) */
+.victory-card {
+  max-width: 540px;
+  text-align: center;
+  border-color: var(--color-gold-bright);
+  box-shadow: 0 0 60px rgba(243, 206, 112, 0.4);
+}
+
+.imperial-laurel {
+  color: var(--color-gold-bright);
+  font-family: var(--font-tactical);
+  font-size: 11px;
+  letter-spacing: 3px;
+  margin-bottom: 8px;
+}
+
+.victory-headline {
+  font-family: var(--font-scifi);
+  font-size: 26px;
+  font-weight: 900;
+  letter-spacing: 4px;
+  color: #fff;
+  text-shadow: 0 0 15px rgba(255, 255, 255, 0.6);
+}
+
+.victory-subheadline {
+  font-family: var(--font-gothic);
+  font-size: 16px;
+  letter-spacing: 3px;
+  margin-bottom: 14px;
+}
+
+.victory-praise {
+  font-size: 13px;
+  line-height: 1.6;
+  color: #e0ded7;
+  margin-bottom: 20px;
+}
+
+/* ==========================================================================
+   RESPONSIVIDADE
+   ========================================================================== */
+@media (max-width: 768px) {
+  .hud-layer {
+    padding: 8px 12px;
+  }
+
+  .hud-top {
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+
+  .objective-panel {
+    order: 3;
+    max-width: 100%;
+    width: 100%;
+  }
+
+  .minimap-container {
+    top: 140px;
+    right: 12px;
+    transform: scale(0.85);
+    transform-origin: top right;
+  }
+
+  .marine-vitals-panel,
+  .weapons-panel {
+    min-width: 240px;
+    padding: 8px 12px;
+  }
+
+  .current-weapon-title {
+    font-size: 13px;
+  }
+
+  .main-title {
+    font-size: 24px;
+    letter-spacing: 3px;
+  }
+
+  .title-content-card {
+    padding: 20px;
+  }
+}

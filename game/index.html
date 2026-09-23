@@ -1,0 +1,406 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <meta name="description" content="War of the Imperium - Jogo de ação 2D top-down inspirado no universo sombrio de Warhammer 40,000.">
+  <title>War of the Imperium | Warhammer 40K 2D Top-Down</title>
+  
+  <!-- Fontes Góticas e Militares Futuristas -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@600;700;900&family=Orbitron:wght@600;800;900&family=Share+Tech+Mono&display=swap" rel="stylesheet">
+  
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <div id="game-container">
+    <!-- Canvas Principal do Jogo -->
+    <canvas id="gameCanvas"></canvas>
+
+    <!-- Camada de Vinheta e Flash de Dano -->
+    <div id="damage-vignette" class="vignette"></div>
+    <div id="screen-flash" class="screen-flash"></div>
+
+    <!-- HUD DO JOGO (DURANTE A PARTIDA) -->
+    <div id="game-hud" class="hud-layer hidden">
+      <!-- Topo: Informações da Onda, Objetivo e Pontuação -->
+      <header class="hud-top">
+        <div class="hud-panel wave-panel">
+          <div class="panel-bracket left"></div>
+          <div class="wave-info">
+            <span class="hud-label">SITUAÇÃO TÁTICA</span>
+            <span id="hud-wave" class="hud-value-large text-gold">WAVE 01</span>
+          </div>
+          <div class="panel-bracket right"></div>
+        </div>
+
+        <div class="hud-panel objective-panel">
+          <div class="objective-header">
+            <span class="status-light blink-red"></span>
+            <span class="hud-label">DIRETRIZ DA MISSÃO</span>
+          </div>
+          <div id="hud-objective" class="objective-text">
+            OBJETIVO: Elimine todas as forças inimigas.
+          </div>
+        </div>
+
+        <div class="hud-panel score-panel">
+          <div class="panel-bracket left"></div>
+          <div class="score-data">
+            <div class="score-row">
+              <span class="hud-label">INIMIGOS:</span>
+              <span id="hud-enemies" class="hud-value-mono text-crimson">05</span>
+            </div>
+            <div class="score-row">
+              <span class="hud-label">SCORE:</span>
+              <span id="hud-score" class="hud-value-mono text-gold">00000</span>
+            </div>
+          </div>
+          <div class="panel-bracket right"></div>
+        </div>
+      </header>
+
+      <!-- Barra de Vida do Boss (Aparece na Onda 5) -->
+      <div id="boss-hud-bar" class="boss-bar-container hidden">
+        <div class="boss-bar-header">
+          <span class="skull-icon">☠</span>
+          <span id="boss-name" class="boss-title">CHAOS CHAMPION - HERALD OF THE WARP</span>
+          <span class="skull-icon">☠</span>
+        </div>
+        <div class="boss-health-frame">
+          <div id="boss-health-fill" class="boss-health-fill" style="width: 100%;"></div>
+          <div class="boss-health-glow"></div>
+        </div>
+      </div>
+
+      <!-- Minimapa Tático (Canto Superior Direito) -->
+      <div class="minimap-container">
+        <div class="minimap-frame">
+          <div class="minimap-bezel-top">RADAR TÁTICO</div>
+          <canvas id="minimapCanvas" width="160" height="160"></canvas>
+          <div class="minimap-crosshair"></div>
+          <div class="minimap-legend">
+            <span class="leg-item"><i class="dot dot-marine"></i>SM</span>
+            <span class="leg-item"><i class="dot dot-enemy"></i>INIMIGO</span>
+            <span class="leg-item"><i class="dot dot-extract"></i>EXTRAÇÃO</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Indicador de Extração no Limite da Tela -->
+      <div id="extraction-pointer" class="extraction-pointer hidden">
+        <div class="pointer-arrow">▲</div>
+        <div class="pointer-text">EXTRAÇÃO</div>
+      </div>
+
+      <!-- Canto Inferior Esquerdo: Vida e Armadura do Space Marine -->
+      <footer class="hud-bottom-left">
+        <div class="marine-vitals-panel">
+          <div class="marine-badge">
+            <div class="aquila-mini"></div>
+            <span class="marine-rank">ADEPTUS ASTARTES</span>
+          </div>
+
+          <!-- Barra de Vida (HP) -->
+          <div class="vital-group">
+            <div class="vital-info">
+              <span class="vital-label">HP</span>
+              <span id="hud-hp-text" class="vital-nums">100 / 100</span>
+            </div>
+            <div class="vital-bar-track">
+              <div id="hud-hp-bar" class="vital-bar-fill hp-fill" style="width: 100%;"></div>
+            </div>
+          </div>
+
+          <!-- Barra de Armadura (Ceramite Armor) -->
+          <div class="vital-group">
+            <div class="vital-info">
+              <span class="vital-label">ARMOR</span>
+              <span id="hud-armor-text" class="vital-nums">50 / 50</span>
+            </div>
+            <div class="vital-bar-track">
+              <div id="hud-armor-bar" class="vital-bar-fill armor-fill" style="width: 100%;"></div>
+            </div>
+          </div>
+        </div>
+      </footer>
+
+      <!-- Canto Inferior Direito: Armas e Munição -->
+      <footer class="hud-bottom-right">
+        <div class="weapons-panel">
+          <!-- Seletor de Armas -->
+          <div class="weapon-slots">
+            <div id="weapon-slot-1" class="weapon-slot active" data-weapon="1">
+              <span class="keybind">[1]</span>
+              <span class="slot-name">BOLTER</span>
+            </div>
+            <div id="weapon-slot-2" class="weapon-slot" data-weapon="2">
+              <span class="keybind">[2]</span>
+              <span class="slot-name">PLASMA GUN</span>
+            </div>
+            <div id="weapon-slot-3" class="weapon-slot" data-weapon="3">
+              <span class="keybind">[3]</span>
+              <span class="slot-name">POWER SWORD</span>
+            </div>
+          </div>
+
+          <!-- Indicador da Arma Atual e Munição -->
+          <div class="active-weapon-display">
+            <div class="weapon-title-row">
+              <span id="hud-weapon-name" class="current-weapon-title">BOLTER</span>
+              <span id="hud-reload-status" class="reload-status">PRONTO</span>
+            </div>
+            <div class="ammo-row">
+              <span class="hud-label">MUNIÇÃO</span>
+              <span id="hud-ammo-text" class="ammo-digits">120 / 240</span>
+            </div>
+            <div class="ammo-visual-bar">
+              <div id="hud-ammo-bar" class="ammo-fill" style="width: 100%;"></div>
+            </div>
+          </div>
+        </div>
+      </footer>
+    </div>
+
+    <!-- TELA INICIAL (MENU PRINCIPAL) -->
+    <div id="screen-title" class="screen-overlay active">
+      <!-- Fundo Animado com Neblina e Cinzas -->
+      <div class="title-bg-scenery">
+        <div class="city-silhouettes"></div>
+        <div class="smokestacks"></div>
+        <div class="red-fog"></div>
+        <div class="dust-canvas-wrapper">
+          <canvas id="dustCanvas"></canvas>
+        </div>
+      </div>
+
+      <div class="title-content-card">
+        <div class="imperial-eagle-crest">
+          <div class="aquila-wings"></div>
+          <div class="imperial-skull">☠</div>
+        </div>
+
+        <h1 class="main-title">WAR OF THE IMPERIUM</h1>
+        <p class="tagline">"In the grim darkness of the far future, there is only war."</p>
+
+        <div class="menu-divider">
+          <span class="divider-line"></span>
+          <span class="divider-symbol">✠</span>
+          <span class="divider-line"></span>
+        </div>
+
+        <nav class="title-buttons">
+          <button id="btn-start" class="btn-imperial btn-primary">
+            <span class="btn-text">INICIAR MISSÃO</span>
+            <span class="btn-subtext">EXPURGAR OS INFIÉIS</span>
+          </button>
+          <button id="btn-how-to-play" class="btn-imperial">
+            <span class="btn-text">COMO JOGAR</span>
+            <span class="btn-subtext">DIRETRIZES DE COMBATE</span>
+          </button>
+          <button id="btn-settings" class="btn-imperial">
+            <span class="btn-text">CONFIGURAÇÕES</span>
+            <span class="btn-subtext">SISTEMAS TÁTICOS</span>
+          </button>
+        </nav>
+
+        <footer class="title-footer">
+          <span>FOR THE EMPEROR OF MANKIND</span>
+        </footer>
+      </div>
+    </div>
+
+    <!-- MODAL: COMO JOGAR -->
+    <div id="modal-how-to-play" class="modal-overlay hidden">
+      <div class="modal-box imperial-box">
+        <div class="modal-header">
+          <span class="skull-sm">☠</span>
+          <h2>DIRETRIZES DE COMBATE DO ASTARTES</h2>
+          <span class="skull-sm">☠</span>
+        </div>
+        
+        <div class="modal-body manual-content">
+          <div class="manual-section">
+            <h3><span class="sec-icon">🕹</span> CONTROLES DO OPERADOR</h3>
+            <div class="control-grid">
+              <div class="ctrl-item"><kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd><span>Movimentar o Space Marine</span></div>
+              <div class="ctrl-item"><kbd>MOUSE</kbd><span>Mirar armamento em 360°</span></div>
+              <div class="ctrl-item"><kbd>CLIQUE ESQ.</kbd><span>Disparar arma primária</span></div>
+              <div class="ctrl-item"><kbd>ESPAÇO</kbd><span>Golpe de Power Sword</span></div>
+              <div class="ctrl-item"><kbd>1</kbd><kbd>2</kbd><kbd>3</kbd><span>Alternar armas (Bolter / Plasma / Espada)</span></div>
+              <div class="ctrl-item"><kbd>R</kbd><span>Recarregar munição ativa</span></div>
+              <div class="ctrl-item"><kbd>ESC</kbd><span>Pausar missão</span></div>
+            </div>
+          </div>
+
+          <div class="manual-section">
+            <h3><span class="sec-icon">⚔</span> ARSENAL DO IMPÉRIO</h3>
+            <div class="weapon-manual-list">
+              <div class="w-card">
+                <span class="w-title text-gold">BOLTER</span>
+                <p>Arma padrão. Dispara projéteis explosivos de alto impacto em rápida cadência. Confiável contra hordas.</p>
+              </div>
+              <div class="w-card">
+                <span class="w-title text-cyan">PLASMA GUN</span>
+                <p>Armamento pesado de alta tecnologia. Dispara esferas de plasma superaquecido que causam dano em área na detonação.</p>
+              </div>
+              <div class="w-card">
+                <span class="w-title text-electric">POWER SWORD</span>
+                <p>Lâmina disruptiva envolta em campo de força. Causa destruição devastadora em combate corpo a corpo a qualquer adversário.</p>
+              </div>
+            </div>
+          </div>
+
+          <div class="manual-section">
+            <h3><span class="sec-icon">☣</span> AMEAÇAS HERÉTICAS</h3>
+            <div class="enemy-manual-list">
+              <p><strong>Cultistas:</strong> Fracos em vida, mas rápidos e em bando.</p>
+              <p><strong>Chaos Marines:</strong> Armadura pesada, disparos profanos e alto dano.</p>
+              <p><strong>Demônios:</strong> Rápidos, agressivos e com garras vorazes de combate corpo a corpo.</p>
+              <p><strong>Chaos Champion:</strong> O líder herege. Possui investidas devastadoras, rajadas mágicas do Caos e invoca reforços.</p>
+            </div>
+          </div>
+        </div>
+
+        <div class="modal-footer">
+          <button id="btn-close-how" class="btn-imperial btn-secondary">RETORNAR</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- MODAL: CONFIGURAÇÕES -->
+    <div id="modal-settings" class="modal-overlay hidden">
+      <div class="modal-box imperial-box">
+        <div class="modal-header">
+          <span class="skull-sm">⚙</span>
+          <h2>CONFIGURAÇÕES TÁTICAS</h2>
+          <span class="skull-sm">⚙</span>
+        </div>
+
+        <div class="modal-body settings-content">
+          <div class="setting-row">
+            <label for="cfg-master-volume">Volume Geral (Áudio Procedural):</label>
+            <div class="slider-group">
+              <input type="range" id="cfg-master-volume" min="0" max="100" value="80">
+              <span id="cfg-volume-val" class="slider-val">80%</span>
+            </div>
+          </div>
+
+          <div class="setting-row">
+            <label for="cfg-shake">Tremor de Tela (Screen Shake):</label>
+            <input type="checkbox" id="cfg-shake" checked>
+          </div>
+
+          <div class="setting-row">
+            <label for="cfg-gore">Efeitos de Sangue e Detritos:</label>
+            <input type="checkbox" id="cfg-gore" checked>
+          </div>
+
+          <div class="setting-row">
+            <label for="cfg-lighting">Iluminação Dinâmica e Sombras:</label>
+            <input type="checkbox" id="cfg-lighting" checked>
+          </div>
+        </div>
+
+        <div class="modal-footer">
+          <button id="btn-close-settings" class="btn-imperial btn-secondary">SALVAR E RETORNAR</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- MENU DE PAUSA (ESC) -->
+    <div id="screen-pause" class="screen-overlay hidden">
+      <div class="modal-box imperial-box pause-card">
+        <div class="modal-header">
+          <span class="skull-sm">⏸</span>
+          <h2>MISSÃO PAUSADA</h2>
+          <span class="skull-sm">⏸</span>
+        </div>
+        <p class="pause-lore">"O descanso é o refúgio dos fracos, mas a tática exige reflexão."</p>
+
+        <div class="pause-actions">
+          <button id="btn-pause-resume" class="btn-imperial btn-primary">RETOMAR COMBATE</button>
+          <button id="btn-pause-restart" class="btn-imperial">REINICIAR MISSÃO</button>
+          <button id="btn-pause-how" class="btn-imperial">COMO JOGAR</button>
+          <button id="btn-pause-menu" class="btn-imperial btn-danger">MENU PRINCIPAL</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- TELA DE GAME OVER -->
+    <div id="screen-game-over" class="screen-overlay hidden">
+      <div class="modal-box imperial-box game-over-card">
+        <div class="modal-header header-fallen">
+          <span class="fallen-cross">✠</span>
+          <h2>YOU HAVE FALLEN</h2>
+          <span class="fallen-cross">✠</span>
+        </div>
+        
+        <p class="fallen-quote">"Somente na morte o dever do guerreiro tem fim."</p>
+
+        <div class="stats-summary-box">
+          <div class="stat-cell">
+            <span class="stat-title">SCORE FINAL</span>
+            <span id="go-score" class="stat-value text-gold">00000</span>
+          </div>
+          <div class="stat-cell">
+            <span class="stat-title">ONDA ALCANÇADA</span>
+            <span id="go-wave" class="stat-value text-crimson">WAVE 01</span>
+          </div>
+          <div class="stat-cell">
+            <span class="stat-title">INIMIGOS ELIMINADOS</span>
+            <span id="go-kills" class="stat-value text-gold">0</span>
+          </div>
+        </div>
+
+        <div class="modal-footer">
+          <button id="btn-retry" class="btn-imperial btn-primary">TRY AGAIN</button>
+          <button id="btn-go-menu" class="btn-imperial btn-secondary">MAIN MENU</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- TELA DE VITÓRIA (MISSION COMPLETE) -->
+    <div id="screen-victory" class="screen-overlay hidden">
+      <div class="modal-box imperial-box victory-card">
+        <div class="imperial-laurel">
+          <span class="laurel-leaves">⚜</span>
+          <span class="laurel-text">GLORIA IN EXCELSIS TERRA</span>
+          <span class="laurel-leaves">⚜</span>
+        </div>
+
+        <h2 class="victory-headline">MISSION COMPLETE</h2>
+        <h3 class="victory-subheadline text-gold">THE IMPERIUM ENDURES</h3>
+        
+        <p class="victory-praise">
+          A infecção herética foi purgada sob a fúria da sua armadura e armas abençoadas. O transporte imperial resgatou com sucesso o guerreiro de ferro.
+        </p>
+
+        <div class="stats-summary-box">
+          <div class="stat-cell">
+            <span class="stat-title">PONTUAÇÃO TOTAL</span>
+            <span id="vic-score" class="stat-value text-gold">00000</span>
+          </div>
+          <div class="stat-cell">
+            <span class="stat-title">HERDADES ABATIDAS</span>
+            <span id="vic-kills" class="stat-value text-crimson">0</span>
+          </div>
+          <div class="stat-cell">
+            <span class="stat-title">ONDAS SOBREVIVIDAS</span>
+            <span id="vic-waves" class="stat-value text-gold">5 / 5</span>
+          </div>
+        </div>
+
+        <div class="modal-footer">
+          <button id="btn-play-again" class="btn-imperial btn-primary">PLAY AGAIN</button>
+          <button id="btn-vic-menu" class="btn-imperial btn-secondary">MAIN MENU</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Script do Jogo -->
+  <script src="script.js"></script>
+</body>
+</html>
