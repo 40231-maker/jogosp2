@@ -2111,6 +2111,10 @@ class SpaceMarinePlayer {
       game.sound.playBolter();
       game.projectiles.push(new Projectile3D(this.scene, spawnX, spawnZ, spreadAngle, 'stalker', w.damage, 'player'));
       game.renderer.addCameraShake(0.15);
+    } else if (w.type === 'grenade') {
+      game.sound.playExplosion(false);
+      game.projectiles.push(new Projectile3D(this.scene, spawnX, spawnZ, spreadAngle, 'missile', w.damage, 'player'));
+      game.renderer.addCameraShake(0.1);
     }
   }
 
@@ -2523,7 +2527,9 @@ class Enemy3D {
       this.rangedTimer -= dt;
       if (this.rangedTimer <= 0) {
         this.rangedTimer = this.config.rangedCooldown || 2.0;
-        game.projectiles.push(new Projectile3D(this.scene, this.x, this.z, this.angle, 'chaos_bolt', this.damage, 'enemy'));
+        // Tipo de projétil baseado na facção
+        const projType = this.config.faction === 'tyranid' ? 'chaos_bolt' : 'chaos_bolt';
+        game.projectiles.push(new Projectile3D(this.scene, this.x, this.z, this.angle, projType, this.damage, 'enemy'));
       }
     }
 
@@ -2735,13 +2741,15 @@ class Pickup3D {
           }
         }
       } else {
-        player.hp = Math.min(player.maxHp, player.hp + 40);
-        player.armor = Math.min(player.maxArmor, player.armor + 30);
+        if (player.hp !== undefined) player.hp = Math.min(player.maxHp, player.hp + 40);
+        if (player.hull !== undefined) player.hull = Math.min(player.maxHull, player.hull + 300);
+        if (player.armor !== undefined) player.armor = Math.min(player.maxArmor, player.armor + 30);
       }
       game.sound.playBolter();
       game.updateHUDVitals();
       game.updateHUDAmmo();
       this.scene.remove(this.mesh);
+      if (this.mesh.geometry) this.mesh.geometry.dispose(); // Evita memory leak
       return true; // Coletado
     }
     return false;
@@ -2815,6 +2823,7 @@ class WaveManager {
   startCampaignWave(waveNum) {
     this.currentWave = waveNum;
     this.waveSpawnQueue = [];
+    this.game._waveTransitioning = false; // Libera flag de transição
     this.game.sound.playBossRoar();
     this.game.updateHUDWave();
 
@@ -2848,20 +2857,24 @@ class WaveManager {
   startEndlessWave(waveNum) {
     this.currentWave = waveNum;
     this.waveSpawnQueue = [];
+    this.game._waveTransitioning = false; // Libera flag de transição
     this.game.sound.playBossRoar();
     this.game.updateHUDWave();
 
-    // Orçamento de Ameaça Progressivo
-    const threatBudget = 40 + waveNum * 25;
+    // Orçamento de Ameaça Progressivo com limite para evitar ondas imensas
+    const threatBudget = Math.min(40 + waveNum * 25, 500);
     let spent = 0;
+    let safetyCounter = 0;
 
     const availableEnemies = ['cultist', 'termagant', 'hormagaunt', 'daemon', 'possessed', 'chaos_marine', 'tyranid_warrior', 'ravener'];
     if (waveNum >= 3) availableEnemies.push('tyranid_prime');
     if (waveNum >= 5) availableEnemies.push('carnifex');
 
-    while (spent < threatBudget) {
+    while (spent < threatBudget && safetyCounter < 200) {
+      safetyCounter++;
       const type = availableEnemies[Math.floor(Math.random() * availableEnemies.length)];
       const cost = BALANCE.enemies[type].threatCost;
+      if (spent + cost > threatBudget && this.waveSpawnQueue.length > 0) break;
       this.waveSpawnQueue.push(type);
       spent += cost;
     }
@@ -3081,6 +3094,9 @@ class Game {
     // Pausa, Game Over e Vitória
     document.getElementById('btn-pause-resume').addEventListener('click', () => this.resumeGame());
     document.getElementById('btn-pause-restart').addEventListener('click', () => this.startMode(this.mode));
+    document.getElementById('btn-pause-how').addEventListener('click', () => {
+      document.getElementById('modal-how-to-play').classList.remove('hidden');
+    });
     document.getElementById('btn-pause-menu').addEventListener('click', () => this.returnToTitle());
     document.getElementById('btn-retry').addEventListener('click', () => this.startMode(this.mode));
     document.getElementById('btn-go-menu').addEventListener('click', () => this.returnToTitle());
@@ -3223,19 +3239,31 @@ class Game {
     this.state = 'PLAYING';
     this.score = 0;
     this.killsCount = 0;
+    this.mouseDown = false;       // Reseta estado do mouse ao reiniciar
+    this._waveTransitioning = false; // Reseta flag de transição de onda
 
     // Remove entidades anteriores
     if (this.activePlayer) {
       this.renderer.scene.remove(this.activePlayer.model);
     }
     for (const e of this.enemies) this.renderer.scene.remove(e.model);
-    for (const p of this.projectiles) this.renderer.scene.remove(p.mesh);
-    for (const pu of this.pickups) this.renderer.scene.remove(pu.mesh);
+    for (const p of this.projectiles) { this.renderer.scene.remove(p.mesh); p.mesh.geometry.dispose(); }
+    for (const pu of this.pickups) { this.renderer.scene.remove(pu.mesh); pu.mesh.geometry.dispose(); }
 
     this.enemies = [];
     this.projectiles = [];
     this.pickups = [];
+    this.aliveEnemiesCount = 0;
     this.particles.clear();
+
+    // Reseta WaveManager
+    this.waveManager.currentWave = 1;
+    this.waveManager.waveSpawnQueue = [];
+    this.waveManager.spawnTimer = 0;
+
+    // Oculta barra de boss da onda anterior
+    document.getElementById('boss-hud-bar').classList.add('hidden');
+    document.getElementById('extraction-pointer').classList.add('hidden');
 
     // Spawna jogador correspondente ao modo
     if (modeName === 'MARINE') {
@@ -3273,6 +3301,7 @@ class Game {
     this.updateHUDVitals();
     this.updateHUDWeapons();
     this.updateHUDAmmo();
+    document.getElementById('hud-score').innerText = '00000';
   }
 
   spawnEnemy(typeKey) {
@@ -3376,7 +3405,8 @@ class Game {
   }
 
   updateHUDWave() {
-    document.getElementById('hud-wave').innerText = `ONDA 0${this.waveManager.currentWave}`;
+    const w = this.waveManager.currentWave;
+    document.getElementById('hud-wave').innerText = `ONDA ${String(w).padStart(2, '0')}`;
   }
 
   updateHUDEnemies() {
@@ -3389,34 +3419,43 @@ class Game {
   }
 
   updateRecordsModal() {
-    document.getElementById('rec-endless-wave').innerText = `ONDA 0${this.saveData.endlessBestWave}`;
+    const bw = this.saveData.endlessBestWave;
+    document.getElementById('rec-endless-wave').innerText = `ONDA ${String(bw).padStart(2, '0')}`;
     document.getElementById('rec-high-score').innerText = String(this.saveData.highScore).padStart(5, '0');
     document.getElementById('rec-total-kills').innerText = this.saveData.totalKills;
     document.getElementById('rec-boss-kills').innerText = this.saveData.bossKills;
   }
 
   pauseGame() {
+    if (this.state !== 'PLAYING') return;
     this.state = 'PAUSED';
+    this.mouseDown = false; // Evita que botão permaneça pressionado ao pausar
     document.getElementById('screen-pause').classList.remove('hidden');
   }
 
   resumeGame() {
+    if (this.state !== 'PAUSED') return;
     this.state = 'PLAYING';
     document.getElementById('screen-pause').classList.add('hidden');
   }
 
   returnToTitle() {
     this.state = 'TITLE';
+    this.mouseDown = false; // Reseta estado do mouse
     document.getElementById('game-hud').classList.add('hidden');
     document.getElementById('screen-pause').classList.add('hidden');
     document.getElementById('screen-game-over').classList.add('hidden');
     document.getElementById('screen-victory').classList.add('hidden');
     document.getElementById('modal-upgrades').classList.add('hidden');
+    document.getElementById('boss-hud-bar').classList.add('hidden');
+    document.getElementById('execution-prompt').classList.add('hidden');
     document.getElementById('screen-title').classList.remove('hidden');
   }
 
   triggerGameOver() {
+    if (this.state === 'GAMEOVER') return; // Evita trigger duplo
     this.state = 'GAMEOVER';
+    this.mouseDown = false; // Reseta estado do mouse
     this.sound.playBossRoar();
 
     // Atualiza salvamento
@@ -3427,8 +3466,9 @@ class Game {
     this.saveData.totalKills += this.killsCount;
     SaveManager.save(this.saveData);
 
+    const w = this.waveManager.currentWave;
     document.getElementById('go-score').innerText = String(this.score).padStart(5, '0');
-    document.getElementById('go-wave').innerText = `ONDA 0${this.waveManager.currentWave}`;
+    document.getElementById('go-wave').innerText = `ONDA ${String(w).padStart(2, '0')}`;
     document.getElementById('go-kills').innerText = this.killsCount;
     document.getElementById('go-mode').innerText = this.mode;
     document.getElementById('screen-game-over').classList.remove('hidden');
@@ -3448,12 +3488,15 @@ class Game {
   }
 
   checkWaveProgression() {
-    if (this.aliveEnemiesCount <= 0 && this.waveManager.waveSpawnQueue.length === 0) {
+    // Garante que só executa uma vez por onda usando flag de transição
+    if (this._waveTransitioning) return;
+    if (this.aliveEnemiesCount <= 0 && this.waveManager.waveSpawnQueue.length === 0 && this.enemies.length === 0) {
+      this._waveTransitioning = true;
       if (this.mode === 'MARINE') {
         if (this.waveManager.currentWave < this.waveManager.maxCampaignWaves) {
-          this.aliveEnemiesCount = 999; // Trava até próxima onda
           setTimeout(() => {
             if (this.state === 'PLAYING') {
+              this._waveTransitioning = false;
               this.waveManager.startCampaignWave(this.waveManager.currentWave + 1);
             }
           }, 3000);
@@ -3496,6 +3539,8 @@ class Game {
         upg.apply();
         modal.classList.add('hidden');
         this.state = 'PLAYING';
+        this._waveTransitioning = false; // Permite nova progressão de onda
+        this.mouseDown = false; // Garante que não dispare imediatamente
         this.waveManager.startEndlessWave(this.waveManager.currentWave + 1);
       });
       container.appendChild(card);
@@ -3562,9 +3607,11 @@ class Game {
           this.enemies.splice(i, 1);
           this.aliveEnemiesCount = Math.max(0, this.aliveEnemiesCount - 1);
           this.updateHUDEnemies();
-          this.checkWaveProgression();
         }
       }
+
+      // Verifica progressão de onda após remover todos os inimigos marcados
+      this.checkWaveProgression();
 
       // Exibe/oculta prompt de execução
       const execPrompt = document.getElementById('execution-prompt');
@@ -3589,6 +3636,47 @@ class Game {
 
       // 8. Renderiza Minimapa Tático
       this.minimap.draw(this);
+
+      // 9. Atualiza HUD do Dreadnought em tempo real (calor e energia)
+      if (this.mode === 'DREADNOUGHT') {
+        this.updateHUDVitals();
+        // Atualiza HUD de habilidades do Dreadnought
+        const stompBtn = document.getElementById('dread-stomp-btn');
+        const furyBtn = document.getElementById('dread-fury-btn');
+        const stompCd = document.getElementById('dread-stomp-cd');
+        const furyCd = document.getElementById('dread-fury-cd');
+        const dp = this.activePlayer;
+        if (dp.stompCooldown > 0) {
+          stompBtn.classList.remove('ready');
+          stompCd.innerText = dp.stompCooldown.toFixed(1) + 's';
+        } else {
+          stompBtn.classList.add('ready');
+          stompCd.innerText = 'OK';
+        }
+        if (dp.furyCooldown > 0) {
+          furyBtn.classList.remove('ready');
+          furyCd.innerText = dp.furyActive ? 'ATIVO' : dp.furyCooldown.toFixed(1) + 's';
+        } else {
+          furyBtn.classList.add('ready');
+          furyCd.innerText = dp.furyActive ? 'ATIVO' : 'OK';
+        }
+      }
+
+      // 10. Atualiza status do parry para o Marine
+      if (this.mode === 'MARINE') {
+        const parryStatus = document.getElementById('hud-parry-status');
+        const mp = this.activePlayer;
+        if (mp.isParrying) {
+          parryStatus.innerText = 'ATIVO!';
+          parryStatus.style.color = '#ffea70';
+        } else if (mp.parryCooldown > 0) {
+          parryStatus.innerText = mp.parryCooldown.toFixed(1) + 's';
+          parryStatus.style.color = '#ff2e43';
+        } else {
+          parryStatus.innerText = 'PRONTO';
+          parryStatus.style.color = '';
+        }
+      }
     }
 
     // Renderiza Cena WebGL 3D
