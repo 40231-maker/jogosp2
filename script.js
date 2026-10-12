@@ -440,6 +440,63 @@ const BALANCE = {
   }
 };
 
+class BalanceManager {
+  static data = BALANCE;
+
+  static getPlayer() {
+    return this.data.player;
+  }
+
+  static getWeapon(key) {
+    return this.data.weapons[key] || this.data.weapons.bolt_rifle;
+  }
+
+  static getMelee(key) {
+    return this.data.melee[key] || this.data.melee.chainsword;
+  }
+
+  static getDreadnought() {
+    return this.data.dreadnought;
+  }
+
+  static getDreadnoughtWeapon(key) {
+    return this.data.dreadnought.weapons[key] || this.data.dreadnought.weapons.assault_cannon;
+  }
+
+  static getEnemy(typeKey) {
+    return this.data.enemies[typeKey] || this.data.enemies.cultist;
+  }
+
+  /**
+   * Calcula parâmetros dinâmicos de onda sem inflar a vida dos inimigos para níveis absurdos.
+   * Modula composição de tropas, orçamento de ameaça e taxa de drop de cura/munição.
+   */
+  static calculateDynamicDifficulty(waveNum, playerHpRatio = 1.0, mode = 'MARINE') {
+    let threatMultiplier = 1.0;
+    if (playerHpRatio > 0.8) {
+      threatMultiplier = 1.06; // Jogador está bem de vida, leve aumento de pressão
+    } else if (playerHpRatio < 0.35) {
+      threatMultiplier = 0.88; // Jogador ferido, reduz levemente pressão para manter ritmo tenso porém justo
+    }
+
+    const baseBudget = mode === 'MARINE'
+      ? Math.round((35 + waveNum * 28) * threatMultiplier)
+      : Math.round(Math.min(90 + waveNum * 35, 550) * threatMultiplier);
+
+    // Ajuste dinâmico de taxa de drop
+    const medkitChance = playerHpRatio < 0.4 ? 0.38 : 0.22;
+    const ammoChance = 0.28;
+
+    return {
+      threatBudget: baseBudget,
+      medkitChance,
+      ammoChance,
+      maxSimultaneous: mode === 'MARINE' ? 16 : 24
+    };
+  }
+}
+window.BalanceManager = BalanceManager;
+
 /* ==========================================================================
    2. GERENCIADOR DE SALVAMENTO (SAVEMANAGER)
    Persistência em LocalStorage com validação de dados e fallback seguro.
@@ -500,11 +557,15 @@ class SaveManager {
 class AudioManager {
   constructor() {
     this.ctx = null;
+    this.masterGainNode = null;
+    this.sfxGainNode = null;
+    this.musicGainNode = null;
     this.masterVolume = 0.8;
     this.sfxVolume = 0.85;
     this.musicVolume = 0.65;
     this.initialized = false;
     this.musicPlaying = false;
+    this.musicTimeout = null;
     this.musicOscs = [];
   }
 
@@ -514,6 +575,19 @@ class AudioManager {
       const AudioCtx = window.AudioContext || window.webkitAudioContext;
       if (AudioCtx) {
         this.ctx = new AudioCtx();
+        // Grafo de áudio principal
+        this.masterGainNode = this.ctx.createGain();
+        this.masterGainNode.gain.setValueAtTime(this.masterVolume, this.ctx.currentTime);
+        this.masterGainNode.connect(this.ctx.destination);
+
+        this.sfxGainNode = this.ctx.createGain();
+        this.sfxGainNode.gain.setValueAtTime(this.sfxVolume, this.ctx.currentTime);
+        this.sfxGainNode.connect(this.masterGainNode);
+
+        this.musicGainNode = this.ctx.createGain();
+        this.musicGainNode.gain.setValueAtTime(this.musicVolume, this.ctx.currentTime);
+        this.musicGainNode.connect(this.masterGainNode);
+
         this.initialized = true;
         this.startProceduralCombatMusic();
       }
@@ -525,6 +599,27 @@ class AudioManager {
   resume() {
     if (this.ctx && this.ctx.state === 'suspended') {
       this.ctx.resume();
+    }
+  }
+
+  setMasterVolume(val) {
+    this.masterVolume = Math.max(0, Math.min(1, val));
+    if (this.masterGainNode && this.ctx) {
+      this.masterGainNode.gain.setValueAtTime(this.masterVolume, this.ctx.currentTime);
+    }
+  }
+
+  setSfxVolume(val) {
+    this.sfxVolume = Math.max(0, Math.min(1, val));
+    if (this.sfxGainNode && this.ctx) {
+      this.sfxGainNode.gain.setValueAtTime(this.sfxVolume, this.ctx.currentTime);
+    }
+  }
+
+  setMusicVolume(val) {
+    this.musicVolume = Math.max(0, Math.min(1, val));
+    if (this.musicGainNode && this.ctx) {
+      this.musicGainNode.gain.setValueAtTime(this.musicVolume, this.ctx.currentTime);
     }
   }
 
@@ -894,6 +989,7 @@ class AudioManager {
 
     const playChordBeat = () => {
       if (!this.musicPlaying || !this.ctx) return;
+      this.resume();
       const t = this.ctx.currentTime;
       const baseFreq = scale[step % scale.length];
       step++;
@@ -907,21 +1003,68 @@ class AudioManager {
       filter.type = 'lowpass';
       filter.frequency.setValueAtTime(260, t);
 
-      const vol = this.masterVolume * this.musicVolume * 0.12;
-      gain.gain.setValueAtTime(vol, t);
+      gain.gain.setValueAtTime(0.15, t);
       gain.gain.exponentialRampToValueAtTime(0.001, t + 1.8);
 
       osc.connect(filter);
       filter.connect(gain);
-      gain.connect(this.ctx.destination);
+      gain.connect(this.musicGainNode || this.ctx.destination);
 
       osc.start(t);
       osc.stop(t + 1.9);
 
-      setTimeout(playChordBeat, 850);
+      this.musicTimeout = setTimeout(playChordBeat, 850);
     };
 
     playChordBeat();
+  }
+
+  stopProceduralCombatMusic() {
+    this.musicPlaying = false;
+    if (this.musicTimeout) {
+      clearTimeout(this.musicTimeout);
+      this.musicTimeout = null;
+    }
+  }
+
+  // Toque fúnebre / Acorde de Derrota
+  playGameOver() {
+    if (!this.ctx) return;
+    this.resume();
+    const t = this.ctx.currentTime;
+    const osc = this.ctx.createOscillator();
+    const gain = this.ctx.createGain();
+    osc.type = 'sawtooth';
+    osc.frequency.setValueAtTime(82.4, t);
+    osc.frequency.exponentialRampToValueAtTime(32.7, t + 2.5);
+
+    gain.gain.setValueAtTime(0.5, t);
+    gain.gain.exponentialRampToValueAtTime(0.001, t + 2.6);
+
+    osc.connect(gain);
+    gain.connect(this.sfxGainNode || this.ctx.destination);
+    osc.start(t);
+    osc.stop(t + 2.7);
+  }
+
+  // Fanfarra triunfal do Imperador / Vitória
+  playVictory() {
+    if (!this.ctx) return;
+    this.resume();
+    const t = this.ctx.currentTime;
+    const notes = [130.81, 164.81, 196.00, 261.63];
+    notes.forEach((freq, idx) => {
+      const osc = this.ctx.createOscillator();
+      const gain = this.ctx.createGain();
+      osc.type = 'triangle';
+      osc.frequency.setValueAtTime(freq, t + idx * 0.18);
+      gain.gain.setValueAtTime(0.4, t + idx * 0.18);
+      gain.gain.exponentialRampToValueAtTime(0.001, t + idx * 0.18 + 1.6);
+      osc.connect(gain);
+      gain.connect(this.sfxGainNode || this.ctx.destination);
+      osc.start(t + idx * 0.18);
+      osc.stop(t + idx * 0.18 + 1.7);
+    });
   }
 }
 
@@ -930,8 +1073,42 @@ class AudioManager {
    Configura cena 3D, câmera isométrica dinâmica, iluminação e sombras suaves.
    ========================================================================== */
 class ThreeRenderer {
+  static showFallbackError(msg) {
+    const overlay = document.getElementById('webgl-error-overlay');
+    const txt = document.getElementById('webgl-error-msg');
+    if (txt) txt.innerText = msg;
+    if (overlay) overlay.classList.remove('hidden');
+    console.error('IRON VIGIL WebGL Error:', msg);
+  }
+
+  static disposeHierarchy(obj) {
+    if (!obj) return;
+    obj.traverse((child) => {
+      if (child.geometry) {
+        child.geometry.dispose();
+      }
+      if (child.material) {
+        if (Array.isArray(child.material)) {
+          child.material.forEach(m => {
+            if (m.map) m.map.dispose();
+            m.dispose();
+          });
+        } else {
+          if (child.material.map) child.material.map.dispose();
+          child.material.dispose();
+        }
+      }
+    });
+  }
+
   constructor(canvas) {
     this.canvas = canvas;
+
+    if (typeof THREE === 'undefined') {
+      ThreeRenderer.showFallbackError('Não foi possível carregar a biblioteca 3D Three.js. Verifique os arquivos em libs/ ou sua conexão de rede.');
+      return;
+    }
+
     this.scene = new THREE.Scene();
     this.scene.background = new THREE.Color(0x07090d);
     this.scene.fog = new THREE.FogExp2(0x07090d, 0.0012);
@@ -942,16 +1119,21 @@ class ThreeRenderer {
     this.camera.position.set(0, 520, 420);
     this.camera.lookAt(0, 0, 0);
 
-    // Renderizador WebGL
-    this.renderer = new THREE.WebGLRenderer({
-      canvas: this.canvas,
-      antialias: true,
-      powerPreference: 'high-performance'
-    });
-    this.renderer.setSize(window.innerWidth, window.innerHeight);
-    this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.5));
-    this.renderer.shadowMap.enabled = true;
-    this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+    // Renderizador WebGL com tratamento de erro
+    try {
+      this.renderer = new THREE.WebGLRenderer({
+        canvas: this.canvas,
+        antialias: true,
+        powerPreference: 'high-performance'
+      });
+      this.renderer.setSize(window.innerWidth, window.innerHeight);
+      this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.5));
+      this.renderer.shadowMap.enabled = true;
+      this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+    } catch (err) {
+      ThreeRenderer.showFallbackError('Falha ao inicializar a aceleração gráfica WebGL. Verifique as configurações de hardware do seu navegador.');
+      return;
+    }
 
     this.trauma = 0;
     this.initLights();
@@ -1048,7 +1230,9 @@ class ThreeRenderer {
   }
 
   render() {
-    this.renderer.render(this.scene, this.camera);
+    if (this.renderer && this.scene && this.camera) {
+      this.renderer.render(this.scene, this.camera);
+    }
   }
 }
 
@@ -1671,13 +1855,26 @@ class Particle3D {
 }
 
 class ParticleSystem3D {
+  static getBoxGeo() {
+    if (!this._boxGeo) this._boxGeo = new THREE.BoxGeometry(2, 2, 2);
+    return this._boxGeo;
+  }
+  static getCasingGeo() {
+    if (!this._casingGeo) this._casingGeo = new THREE.CylinderGeometry(1.2, 1.2, 4, 6);
+    return this._casingGeo;
+  }
+  static getCasingMat() {
+    if (!this._casingMat) this._casingMat = new THREE.MeshStandardMaterial({ color: 0xd4af37, metalness: 0.9, roughness: 0.2 });
+    return this._casingMat;
+  }
+
   constructor(scene) {
     this.scene = scene;
     this.particles = [];
   }
 
   addSparks(x, y, z, colorHex = 0xffaa22, count = 6) {
-    const geo = new THREE.BoxGeometry(2, 2, 2);
+    const geo = ParticleSystem3D.getBoxGeo();
     const mat = new THREE.MeshBasicMaterial({ color: colorHex });
 
     for (let i = 0; i < count; i++) {
@@ -1696,8 +1893,8 @@ class ParticleSystem3D {
   }
 
   addCasing(x, y, z, aimAngle) {
-    const geo = new THREE.CylinderGeometry(1.2, 1.2, 4, 6);
-    const mat = new THREE.MeshStandardMaterial({ color: 0xd4af37, metalness: 0.9, roughness: 0.2 });
+    const geo = ParticleSystem3D.getCasingGeo();
+    const mat = ParticleSystem3D.getCasingMat();
     const mesh = new THREE.Mesh(geo, mat);
     mesh.position.set(x, y, z);
     mesh.rotation.z = Math.PI / 2;
@@ -1713,7 +1910,7 @@ class ParticleSystem3D {
   }
 
   addExplosionFX(x, z, isLarge = false) {
-    this.addSparks(x, 15, z, 0xff5511, isLarge ? 30 : 16);
+    this.addSparks(x, 15, z, 0xff5511, isLarge ? 28 : 14);
     // Shockwave ring
     const ringGeo = new THREE.RingGeometry(2, isLarge ? 120 : 75, 24);
     const ringMat = new THREE.MeshBasicMaterial({ color: 0xffaa33, side: THREE.DoubleSide, transparent: true, opacity: 0.8 });
@@ -1736,7 +1933,12 @@ class ParticleSystem3D {
       }
       if (p.life <= 0) {
         this.scene.remove(p.mesh);
-        p.mesh.geometry.dispose();
+        if (p.type === 'ring') {
+          if (p.mesh.geometry) p.mesh.geometry.dispose();
+          if (p.mesh.material) p.mesh.material.dispose();
+        } else if (p.type === 'spark') {
+          if (p.mesh.material) p.mesh.material.dispose();
+        }
         this.particles.splice(i, 1);
       }
     }
@@ -1745,16 +1947,38 @@ class ParticleSystem3D {
   clear() {
     for (const p of this.particles) {
       this.scene.remove(p.mesh);
-      p.mesh.geometry.dispose();
+      if (p.type === 'ring') {
+        if (p.mesh.geometry) p.mesh.geometry.dispose();
+        if (p.mesh.material) p.mesh.material.dispose();
+      } else if (p.type === 'spark') {
+        if (p.mesh.material) p.mesh.material.dispose();
+      }
     }
     this.particles = [];
   }
 }
 
 /* ==========================================================================
-   7. PROJÉTEIS TRIDIMENSIONAL (PROJECTILE3D)
+   7. PROJÉTEIS TRIDIMENSIONAL (PROJECTILE3D) COM POOLING E CACHE GEOMÉTRICO
    Suporta Bolter, Plasma, Melta, Granadas e Rajadas Heréticas.
    ========================================================================== */
+const ProjectileShared = {
+  geos: {},
+  mats: {},
+  getGeo(radius) {
+    if (!this.geos[radius]) {
+      this.geos[radius] = new THREE.SphereGeometry(radius, 8, 8);
+    }
+    return this.geos[radius];
+  },
+  getMat(color) {
+    if (!this.mats[color]) {
+      this.mats[color] = new THREE.MeshBasicMaterial({ color });
+    }
+    return this.mats[color];
+  }
+};
+
 class Projectile3D {
   constructor(scene, x, z, angle, type, damage, shooter = 'player') {
     this.scene = scene;
@@ -1794,8 +2018,8 @@ class Projectile3D {
       this.splashRadius = 110;
     }
 
-    const geo = new THREE.SphereGeometry(radius, 8, 8);
-    const mat = new THREE.MeshBasicMaterial({ color });
+    const geo = ProjectileShared.getGeo(radius);
+    const mat = ProjectileShared.getMat(color);
     this.mesh = new THREE.Mesh(geo, mat);
     this.mesh.position.set(x, this.y, z);
     this.scene.add(this.mesh);
@@ -2314,12 +2538,18 @@ class DreadnoughtPlayer {
 
   fireLeftArm(game) {
     if (this.heat >= 100 && !this.furyActive) return; // Superaquecido!
-    const now = performance.now() / 1000;
     const w = this.leftArmWeapon;
+    if (w.ammo !== undefined && w.ammo <= 0) return; // Sem munição no braço esquerdo
+
+    const now = performance.now() / 1000;
     if (now - this.lastFireL < (this.furyActive ? w.fireRate * 0.7 : w.fireRate)) return;
     this.lastFireL = now;
 
     if (!this.furyActive) this.heat = Math.min(100, this.heat + w.heatRate);
+    if (w.ammo !== undefined && w.ammo !== Infinity) {
+      w.ammo = Math.max(0, w.ammo - 1);
+      game.updateHUDAmmo();
+    }
 
     const spawnX = this.x + Math.cos(this.angle) * 45 - Math.sin(this.angle) * 36;
     const spawnZ = this.z + Math.sin(this.angle) * 45 + Math.cos(this.angle) * 36;
@@ -2328,7 +2558,7 @@ class DreadnoughtPlayer {
       game.sound.playAssaultCannon();
       game.projectiles.push(new Projectile3D(this.scene, spawnX, spawnZ, this.angle + (Math.random() - 0.5) * 0.06, 'bolter', w.damage, 'player'));
       game.renderer.addCameraShake(0.04);
-      if (this.model.leftArm.barrels) this.model.leftArm.barrels.rotation.z += 0.6;
+      if (this.model.leftArm && this.model.leftArm.barrels) this.model.leftArm.barrels.rotation.z += 0.6;
     } else if (w.type === 'flamer') {
       game.sound.playMelta();
       game.projectiles.push(new Projectile3D(this.scene, spawnX, spawnZ, this.angle, 'melta', w.damage, 'player'));
@@ -2492,12 +2722,19 @@ class Enemy3D {
     game.addScore(this.score, this.x, this.z);
     game.killsCount++;
 
-    // Remove mesh da cena
+    // Remove mesh da cena e libera recursos de GPU
     this.scene.remove(this.model);
+    ThreeRenderer.disposeHierarchy(this.model);
 
-    // Chance de derrubar munição ou cura
-    if (Math.random() < 0.25) {
-      game.spawnPickup(this.x, this.z);
+    // Chance de derrubar munição ou cura com balanceamento dinâmico
+    const p = game.activePlayer;
+    const hpRatio = p ? (p.hp !== undefined ? p.hp / p.maxHp : p.hull / p.maxHull) : 1.0;
+    const diff = BalanceManager.calculateDynamicDifficulty(game.waveManager.currentWave, hpRatio, game.mode);
+    const dropRoll = Math.random();
+    if (dropRoll < diff.medkitChance) {
+      game.spawnPickup(this.x, this.z, 'medkit');
+    } else if (dropRoll < diff.medkitChance + diff.ammoChance) {
+      game.spawnPickup(this.x, this.z, 'ammo');
     }
   }
 
@@ -2646,6 +2883,13 @@ class BossChampion3D extends Enemy3D {
       }
     }
   }
+
+  die(game) {
+    super.die(game);
+    document.getElementById('boss-hud-bar').classList.add('hidden');
+    game.saveData.bossKills++;
+    SaveManager.save(game.saveData);
+  }
 }
 
 /* ==========================================================================
@@ -2676,6 +2920,7 @@ class Barrel3D {
     if (this.exploded) return;
     this.exploded = true;
     this.scene.remove(this.model);
+    ThreeRenderer.disposeHierarchy(this.model);
 
     game.sound.playExplosion(true);
     game.renderer.addCameraShake(0.35);
@@ -2740,16 +2985,20 @@ class Pickup3D {
             }
           }
         }
+        if (player.leftArmWeapon && player.leftArmWeapon.ammo !== undefined && player.leftArmWeapon.ammo !== Infinity) {
+          player.leftArmWeapon.ammo = Math.min(player.leftArmWeapon.maxAmmo || 1200, player.leftArmWeapon.ammo + 240);
+        }
       } else {
         if (player.hp !== undefined) player.hp = Math.min(player.maxHp, player.hp + 40);
-        if (player.hull !== undefined) player.hull = Math.min(player.maxHull, player.hull + 300);
-        if (player.armor !== undefined) player.armor = Math.min(player.maxArmor, player.armor + 30);
+        if (player.hull !== undefined) player.hull = Math.min(player.maxHull, player.hull + 400);
+        if (player.armor !== undefined) player.armor = Math.min(player.maxArmor, player.armor + 50);
       }
       game.sound.playBolter();
       game.updateHUDVitals();
       game.updateHUDAmmo();
       this.scene.remove(this.mesh);
-      if (this.mesh.geometry) this.mesh.geometry.dispose(); // Evita memory leak
+      if (this.mesh.geometry) this.mesh.geometry.dispose();
+      if (this.mesh.material) this.mesh.material.dispose();
       return true; // Coletado
     }
     return false;
@@ -2811,13 +3060,19 @@ class MinimapRenderer {
    14. COMBAT DIRECTOR & GERENCIADOR DE ONDAS (WAVEMANAGER)
    Controla ritmo, intensidade e orçamento de ameaça para hordas balanceadas.
    ========================================================================== */
-class WaveManager {
+class CombatDirector {
   constructor(game) {
     this.game = game;
     this.currentWave = 1;
     this.maxCampaignWaves = 5;
     this.waveSpawnQueue = [];
     this.spawnTimer = 0;
+    this.squadPauseTimer = 0;
+    this.spawnBurstCounter = 0;
+  }
+
+  get maxSimultaneousEnemies() {
+    return this.game.mode === 'MARINE' ? 16 : 24;
   }
 
   startCampaignWave(waveNum) {
@@ -2852,6 +3107,7 @@ class WaveManager {
 
     this.game.aliveEnemiesCount = this.waveSpawnQueue.length;
     this.game.updateHUDEnemies();
+    this.spawnTimer = 0.5;
   }
 
   startEndlessWave(waveNum) {
@@ -2861,8 +3117,12 @@ class WaveManager {
     this.game.sound.playBossRoar();
     this.game.updateHUDWave();
 
-    // Orçamento de Ameaça Progressivo com limite para evitar ondas imensas
-    const threatBudget = Math.min(40 + waveNum * 25, 500);
+    // Orçamento de Ameaça dinâmico via BalanceManager
+    const p = this.game.activePlayer;
+    const hpRatio = p ? (p.hull / p.maxHull) : 1.0;
+    const diff = BalanceManager.calculateDynamicDifficulty(waveNum, hpRatio, 'DREADNOUGHT');
+    const threatBudget = diff.threatBudget;
+
     let spent = 0;
     let safetyCounter = 0;
 
@@ -2881,19 +3141,40 @@ class WaveManager {
 
     this.game.aliveEnemiesCount = this.waveSpawnQueue.length;
     this.game.updateHUDEnemies();
+    this.spawnTimer = 0.5;
   }
 
   update(dt) {
     if (this.waveSpawnQueue.length > 0) {
+      // Respeita orçamento de inimigos simultâneos na tela para evitar sobrecarga ou travamentos
+      if (this.game.enemies.length >= this.maxSimultaneousEnemies) {
+        return;
+      }
+
+      if (this.squadPauseTimer > 0) {
+        this.squadPauseTimer -= dt;
+        return;
+      }
+
       this.spawnTimer -= dt;
       if (this.spawnTimer <= 0) {
-        this.spawnTimer = 0.55;
+        this.spawnTimer = 0.65;
+        this.spawnBurstCounter++;
+
         const nextType = this.waveSpawnQueue.shift();
         this.game.spawnEnemy(nextType);
+
+        // Intervalo tático após cada grupo de 4 inimigos
+        if (this.spawnBurstCounter >= 4) {
+          this.spawnBurstCounter = 0;
+          this.squadPauseTimer = 1.6;
+        }
       }
     }
   }
 }
+const WaveManager = CombatDirector;
+window.CombatDirector = CombatDirector;
 
 /* ==========================================================================
    15. CONTROLADOR GERAL DO JOGO (GAME ENGINE)
@@ -2963,6 +3244,17 @@ class Game {
     [pillar1, pillar2, pillar3, pillar4].forEach(p => this.renderer.scene.add(p));
 
     // Barris Explosivos
+    this.respawnBarrels();
+  }
+
+  respawnBarrels() {
+    for (const b of this.mapBarrels) {
+      if (b.model) {
+        this.renderer.scene.remove(b.model);
+        ThreeRenderer.disposeHierarchy(b.model);
+      }
+    }
+    this.mapBarrels = [];
     const coords = [
       { x: -500, z: -350 }, { x: -460, z: -350 },
       { x: 500, z: -350 }, { x: 540, z: -350 },
@@ -3015,20 +3307,20 @@ class Game {
       this.keys[e.code] = false;
     });
 
-    // Mouse Mira 360° em Espaço 3D
+    // Cache de vetores para mira 3D sem alocação contínua de memória (Zero GC Pressure)
+    const _raycaster = new THREE.Raycaster();
+    const _mouseVec = new THREE.Vector2();
+    const _groundPlane = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0);
+    const _intersectTarget = new THREE.Vector3();
+
     window.addEventListener('mousemove', (e) => {
-      const raycaster = new THREE.Raycaster();
-      const mouse = new THREE.Vector2(
-        (e.clientX / window.innerWidth) * 2 - 1,
-        -(e.clientY / window.innerHeight) * 2 + 1
-      );
-      raycaster.setFromCamera(mouse, this.renderer.camera);
-      const plane = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0);
-      const target = new THREE.Vector3();
-      raycaster.ray.intersectPlane(plane, target);
+      _mouseVec.x = (e.clientX / window.innerWidth) * 2 - 1;
+      _mouseVec.y = -(e.clientY / window.innerHeight) * 2 + 1;
+      _raycaster.setFromCamera(_mouseVec, this.renderer.camera);
+      _raycaster.ray.intersectPlane(_groundPlane, _intersectTarget);
 
       if (this.activePlayer) {
-        this.mouseWorldAngle = Math.atan2(target.z - this.activePlayer.z, target.x - this.activePlayer.x);
+        this.mouseWorldAngle = Math.atan2(_intersectTarget.z - this.activePlayer.z, _intersectTarget.x - this.activePlayer.x);
       }
     });
 
@@ -3091,6 +3383,37 @@ class Game {
       document.getElementById('modal-settings').classList.add('hidden');
     });
 
+    // Cliques nos Slots de Arma no HUD (Desktop & Touch)
+    for (let slotIdx = 1; slotIdx <= 4; slotIdx++) {
+      const slotEl = document.getElementById(`slot-${slotIdx}`);
+      if (slotEl) {
+        slotEl.addEventListener('click', () => {
+          if (this.state === 'PLAYING' && this.mode === 'MARINE' && this.activePlayer) {
+            this.activePlayer.switchSlot(slotIdx, this);
+          }
+        });
+      }
+    }
+
+    // Cliques nas Habilidades do Dreadnought no HUD
+    const stompEl = document.getElementById('dread-stomp-btn');
+    if (stompEl) {
+      stompEl.addEventListener('click', () => {
+        if (this.state === 'PLAYING' && this.mode === 'DREADNOUGHT' && this.activePlayer) {
+          this.activePlayer.performStomp(this);
+        }
+      });
+    }
+
+    const furyEl = document.getElementById('dread-fury-btn');
+    if (furyEl) {
+      furyEl.addEventListener('click', () => {
+        if (this.state === 'PLAYING' && this.mode === 'DREADNOUGHT' && this.activePlayer) {
+          this.activePlayer.activateFury(this);
+        }
+      });
+    }
+
     // Pausa, Game Over e Vitória
     document.getElementById('btn-pause-resume').addEventListener('click', () => this.resumeGame());
     document.getElementById('btn-pause-restart').addEventListener('click', () => this.startMode(this.mode));
@@ -3103,13 +3426,47 @@ class Game {
     document.getElementById('btn-play-again').addEventListener('click', () => this.startMode(this.mode));
     document.getElementById('btn-vic-menu').addEventListener('click', () => this.returnToTitle());
 
-    // Configurações
+    // Configurações e Persistência
     document.getElementById('cfg-master-volume').addEventListener('input', (e) => {
-      this.sound.masterVolume = parseInt(e.target.value, 10) / 100;
-      document.getElementById('cfg-volume-val').innerText = `${e.target.value}%`;
+      const val = parseInt(e.target.value, 10);
+      this.sound.setMasterVolume(val / 100);
+      document.getElementById('cfg-volume-val').innerText = `${val}%`;
+      this.saveData.settings.masterVolume = val;
+      SaveManager.save(this.saveData);
     });
+
+    document.getElementById('cfg-sfx-volume').addEventListener('input', (e) => {
+      const val = parseInt(e.target.value, 10);
+      this.sound.setSfxVolume(val / 100);
+      document.getElementById('cfg-sfx-val').innerText = `${val}%`;
+      this.saveData.settings.sfxVolume = val;
+      SaveManager.save(this.saveData);
+    });
+
+    document.getElementById('cfg-music-volume').addEventListener('input', (e) => {
+      const val = parseInt(e.target.value, 10);
+      this.sound.setMusicVolume(val / 100);
+      document.getElementById('cfg-music-val').innerText = `${val}%`;
+      this.saveData.settings.musicVolume = val;
+      SaveManager.save(this.saveData);
+    });
+
     document.getElementById('cfg-graphics').addEventListener('change', (e) => {
       this.renderer.setGraphicsQuality(e.target.value);
+      this.saveData.settings.graphics = e.target.value;
+      SaveManager.save(this.saveData);
+    });
+
+    document.getElementById('cfg-shake').addEventListener('change', (e) => {
+      this.screenShakeEnabled = e.target.checked;
+      this.saveData.settings.shake = e.target.checked;
+      SaveManager.save(this.saveData);
+    });
+
+    document.getElementById('cfg-gore').addEventListener('change', (e) => {
+      this.goreEnabled = e.target.checked;
+      this.saveData.settings.gore = e.target.checked;
+      SaveManager.save(this.saveData);
     });
 
     // CONTROLES DE TOQUE MOBILE (POINTER EVENTS)
@@ -3235,6 +3592,10 @@ class Game {
   }
 
   startMode(modeName) {
+    if (this._isStarting) return;
+    this._isStarting = true;
+    setTimeout(() => { this._isStarting = false; }, 350);
+
     this.mode = modeName;
     this.state = 'PLAYING';
     this.score = 0;
@@ -3242,19 +3603,30 @@ class Game {
     this.mouseDown = false;       // Reseta estado do mouse ao reiniciar
     this._waveTransitioning = false; // Reseta flag de transição de onda
 
-    // Remove entidades anteriores
+    // Remove entidades anteriores e libera recursos GPU
     if (this.activePlayer) {
       this.renderer.scene.remove(this.activePlayer.model);
+      ThreeRenderer.disposeHierarchy(this.activePlayer.model);
     }
-    for (const e of this.enemies) this.renderer.scene.remove(e.model);
-    for (const p of this.projectiles) { this.renderer.scene.remove(p.mesh); p.mesh.geometry.dispose(); }
-    for (const pu of this.pickups) { this.renderer.scene.remove(pu.mesh); pu.mesh.geometry.dispose(); }
+    for (const e of this.enemies) {
+      this.renderer.scene.remove(e.model);
+      ThreeRenderer.disposeHierarchy(e.model);
+    }
+    for (const p of this.projectiles) {
+      this.renderer.scene.remove(p.mesh);
+    }
+    for (const pu of this.pickups) {
+      this.renderer.scene.remove(pu.mesh);
+      if (pu.mesh.geometry) pu.mesh.geometry.dispose();
+      if (pu.mesh.material) pu.mesh.material.dispose();
+    }
 
     this.enemies = [];
     this.projectiles = [];
     this.pickups = [];
     this.aliveEnemiesCount = 0;
     this.particles.clear();
+    this.respawnBarrels();
 
     // Reseta WaveManager
     this.waveManager.currentWave = 1;
@@ -3288,6 +3660,12 @@ class Game {
       document.getElementById('dread-arms-panel').classList.remove('hidden');
       document.getElementById('marine-tools').classList.add('hidden');
       this.waveManager.startEndlessWave(1);
+    }
+
+    // Ativa controles de toque apenas em dispositivos compatíveis
+    const touchArea = document.getElementById('touch-controls');
+    if ('ontouchstart' in window || navigator.maxTouchPoints > 0 || window.innerWidth <= 1024) {
+      touchArea.classList.add('active');
     }
 
     // Oculta telas e abre HUD
@@ -3377,7 +3755,7 @@ class Game {
   }
 
   updateHUDAmmo() {
-    if (this.mode === 'MARINE') {
+    if (this.mode === 'MARINE' && this.activePlayer && this.activePlayer.weapons) {
       const w = this.activePlayer.weapons[this.activePlayer.activeSlot];
       const textEl = document.getElementById('hud-ammo-text');
       const barEl = document.getElementById('hud-ammo-bar');
@@ -3401,6 +3779,20 @@ class Game {
 
       textEl.innerText = `${w.mag} / ${w.ammo}`;
       barEl.style.width = `${Math.max(0, (w.mag / w.maxMag) * 100)}%`;
+    } else if (this.mode === 'DREADNOUGHT' && this.activePlayer) {
+      const leftName = document.getElementById('dread-arm-left-name');
+      const leftAmmo = document.getElementById('dread-arm-left-ammo');
+      const rightName = document.getElementById('dread-arm-right-name');
+      const rightAmmo = document.getElementById('dread-arm-right-ammo');
+
+      if (this.activePlayer.leftArmWeapon) {
+        if (leftName) leftName.innerText = `${this.activePlayer.leftArmWeapon.name}:`;
+        if (leftAmmo) leftAmmo.innerText = this.activePlayer.leftArmWeapon.ammo === Infinity ? 'INF' : this.activePlayer.leftArmWeapon.ammo;
+      }
+      if (this.activePlayer.rightArmWeapon) {
+        if (rightName) rightName.innerText = `${this.activePlayer.rightArmWeapon.name}:`;
+        if (rightAmmo) rightAmmo.innerText = this.activePlayer.rightArmWeapon.ammo === Infinity ? 'MELEE' : this.activePlayer.rightArmWeapon.ammo;
+      }
     }
   }
 
@@ -3442,6 +3834,34 @@ class Game {
   returnToTitle() {
     this.state = 'TITLE';
     this.mouseDown = false; // Reseta estado do mouse
+    this.sound.stopProceduralCombatMusic();
+
+    // Limpa todas as entidades ativas da cena e libera memória GPU
+    if (this.activePlayer) {
+      this.renderer.scene.remove(this.activePlayer.model);
+      ThreeRenderer.disposeHierarchy(this.activePlayer.model);
+      this.activePlayer = null;
+    }
+    for (const e of this.enemies) {
+      this.renderer.scene.remove(e.model);
+      ThreeRenderer.disposeHierarchy(e.model);
+    }
+    this.enemies = [];
+    for (const p of this.projectiles) {
+      this.renderer.scene.remove(p.mesh);
+    }
+    this.projectiles = [];
+    for (const pu of this.pickups) {
+      this.renderer.scene.remove(pu.mesh);
+      if (pu.mesh.geometry) pu.mesh.geometry.dispose();
+      if (pu.mesh.material) pu.mesh.material.dispose();
+    }
+    this.pickups = [];
+    this.particles.clear();
+
+    const touchArea = document.getElementById('touch-controls');
+    if (touchArea) touchArea.classList.remove('active');
+
     document.getElementById('game-hud').classList.add('hidden');
     document.getElementById('screen-pause').classList.add('hidden');
     document.getElementById('screen-game-over').classList.add('hidden');
@@ -3456,7 +3876,12 @@ class Game {
     if (this.state === 'GAMEOVER') return; // Evita trigger duplo
     this.state = 'GAMEOVER';
     this.mouseDown = false; // Reseta estado do mouse
-    this.sound.playBossRoar();
+    this.sound.playGameOver();
+
+    document.getElementById('boss-hud-bar').classList.add('hidden');
+    document.getElementById('execution-prompt').classList.add('hidden');
+    const touchArea = document.getElementById('touch-controls');
+    if (touchArea) touchArea.classList.remove('active');
 
     // Atualiza salvamento
     if (this.score > this.saveData.highScore) this.saveData.highScore = this.score;
@@ -3476,6 +3901,14 @@ class Game {
 
   triggerVictory() {
     this.state = 'VICTORY';
+    this.mouseDown = false;
+    this.sound.playVictory();
+
+    document.getElementById('boss-hud-bar').classList.add('hidden');
+    document.getElementById('execution-prompt').classList.add('hidden');
+    const touchArea = document.getElementById('touch-controls');
+    if (touchArea) touchArea.classList.remove('active');
+
     this.saveData.totalKills += this.killsCount;
     this.saveData.bossKills++;
     if (this.score > this.saveData.highScore) this.saveData.highScore = this.score;
@@ -3537,6 +3970,8 @@ class Game {
       `;
       card.addEventListener('click', () => {
         upg.apply();
+        this.updateHUDVitals();
+        this.updateHUDAmmo();
         modal.classList.add('hidden');
         this.state = 'PLAYING';
         this._waveTransitioning = false; // Permite nova progressão de onda
@@ -3686,9 +4121,11 @@ class Game {
   }
 }
 
-// Inicialização Principal
-window.addEventListener('DOMContentLoaded', () => {
+// Inicialização Principal Resiliente
+function initGame() {
+  if (window.ironVigilGame) return;
   const game = new Game();
+  window.ironVigilGame = game;
   const urlParams = new URLSearchParams(window.location.search);
   const autoMode = urlParams.get('mode');
   if (autoMode === 'marine') {
@@ -3697,4 +4134,10 @@ window.addEventListener('DOMContentLoaded', () => {
     game.startMode('DREADNOUGHT');
   }
   requestAnimationFrame((t) => game.loop(t));
-});
+}
+
+if (document.readyState === 'loading') {
+  window.addEventListener('DOMContentLoaded', initGame);
+} else {
+  initGame();
+}

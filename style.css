@@ -630,6 +630,7 @@ html, body {
   padding: 4px 8px;
   border: 1px solid var(--color-metal-rim);
   border-radius: 3px;
+  pointer-events: auto;
 }
 
 .weapon-slot {
@@ -642,12 +643,18 @@ html, body {
   cursor: pointer;
   transition: all 0.15s ease;
   min-width: 65px;
+  user-select: none;
+}
+
+.weapon-slot:hover {
+  background: rgba(205, 168, 81, 0.12);
+  border-color: var(--color-gold-mid);
 }
 
 .weapon-slot.active {
-  background: rgba(205, 168, 81, 0.18);
+  background: rgba(205, 168, 81, 0.22);
   border-color: var(--color-gold-bright);
-  box-shadow: 0 0 10px rgba(245, 208, 112, 0.3);
+  box-shadow: 0 0 10px rgba(245, 208, 112, 0.35);
 }
 
 .weapon-slot .slot-key {
@@ -668,6 +675,7 @@ html, body {
 .dread-abilities-bar {
   display: flex;
   gap: 10px;
+  pointer-events: auto;
 }
 
 .dread-ability {
@@ -677,6 +685,14 @@ html, body {
   background: rgba(14, 18, 26, 0.94);
   border: 1px solid var(--color-metal-rim);
   padding: 6px 14px;
+  cursor: pointer;
+  transition: transform 0.12s ease, border-color 0.15s ease, box-shadow 0.15s ease;
+  user-select: none;
+}
+
+.dread-ability:hover {
+  border-color: var(--color-gold-mid);
+  transform: translateY(-2px);
 }
 
 .dread-ability.ready {

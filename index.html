@@ -18,7 +18,10 @@
   <script src="libs/three.min.js"></script>
   <script>
     if (!window.THREE) {
-      document.write('<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"><\/script>');
+      const s = document.createElement('script');
+      s.src = 'https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js';
+      s.async = false;
+      document.head.appendChild(s);
     }
   </script>
 
@@ -26,12 +29,37 @@
   <script src="libs/gsap.min.js"></script>
   <script>
     if (!window.gsap) {
-      document.write('<script src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.2/gsap.min.js"><\/script>');
+      const s = document.createElement('script');
+      s.src = 'https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.2/gsap.min.js';
+      s.async = false;
+      document.head.appendChild(s);
     }
   </script>
 </head>
 <body>
   <div id="game-container">
+    <!-- Overlay de Erro do WebGL / Truncamento de Hardware -->
+    <div id="webgl-error-overlay" class="screen-overlay hidden">
+      <div class="modal-box" style="width: min(560px, 92vw); border: 2px solid var(--color-crimson-bright);">
+        <div class="modal-header" style="border-bottom: 2px solid var(--color-crimson-bright);">
+          <span class="skull-sm text-crimson">⚠</span>
+          <h2 class="text-crimson">COGITADOR IMPERIAL: FALHA WEBGL</h2>
+          <span class="skull-sm text-crimson">⚠</span>
+        </div>
+        <div class="modal-body" style="text-align: center; padding: 22px 16px;">
+          <p id="webgl-error-msg" style="color: var(--color-text-parchment); margin-bottom: 14px; font-size: 15px; line-height: 1.5;">
+            Não foi possível inicializar o motor de combate 3D WebGL.
+          </p>
+          <p style="color: var(--color-text-muted); font-size: 13px; line-height: 1.6; margin-bottom: 20px;">
+            Verifique se a aceleração de hardware 3D está habilitada no seu navegador (ex: Chrome &gt; Configurações &gt; Sistema &gt; Usar aceleração de gráficos) ou atualize os drivers da sua GPU.
+          </p>
+          <button id="btn-reload-webgl" class="btn-imperial btn-primary" onclick="window.location.reload()">
+            <span class="btn-text">REINICIALIZAR SISTEMA</span>
+          </button>
+        </div>
+      </div>
+    </div>
+
     <!-- Canvas Principal 3D (WebGL Three.js) -->
     <canvas id="threeCanvas"></canvas>
 
