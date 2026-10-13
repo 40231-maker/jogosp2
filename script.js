@@ -12,10 +12,10 @@
    ========================================================================== */
 const BALANCE = {
   player: {
-    hp: 150,
-    armor: 100,
-    speedNormal: 195,
-    speedSprint: 265, // 135% da velocidade normal
+    hp: 180,
+    armor: 120,
+    speedNormal: 190,
+    speedSprint: 245, // Sprint forte, mas controlável
     grenadesInitial: 2,
     dodgeSpeed: 460,
     dodgeDuration: 0.28,
@@ -491,7 +491,7 @@ class BalanceManager {
       threatBudget: baseBudget,
       medkitChance,
       ammoChance,
-      maxSimultaneous: mode === 'MARINE' ? 16 : 24
+      maxSimultaneous: mode === 'MARINE' ? 12 : 24
     };
   }
 }
@@ -1110,8 +1110,9 @@ class ThreeRenderer {
     }
 
     this.scene = new THREE.Scene();
-    this.scene.background = new THREE.Color(0x07090d);
-    this.scene.fog = new THREE.FogExp2(0x07090d, 0.0012);
+    this.scene.background = new THREE.Color(0x343b36);
+    // Fog leve: mantém profundidade sem apagar os mapas em máquinas com pouca luz.
+    this.scene.fog = new THREE.FogExp2(0x414940, 0.00027);
 
     // Câmera Isométrica com perspectiva militar
     const aspect = window.innerWidth / window.innerHeight;
@@ -1128,6 +1129,8 @@ class ThreeRenderer {
       });
       this.renderer.setSize(window.innerWidth, window.innerHeight);
       this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.5));
+      this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
+      this.renderer.toneMappingExposure = 0.76;
       this.renderer.shadowMap.enabled = true;
       this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
     } catch (err) {
@@ -1141,11 +1144,14 @@ class ThreeRenderer {
 
   initLights() {
     // Luz ambiente gótica rica e equilibrada
-    const amb = new THREE.AmbientLight(0x758296, 1.3);
+    const amb = new THREE.AmbientLight(0x9ba7ad, 0.68);
     this.scene.add(amb);
+    // Luz hemisférica de preenchimento para que superfícies escuras continuem legíveis.
+    const hemi = new THREE.HemisphereLight(0xaabac4, 0x33291e, 0.56);
+    this.scene.add(hemi);
 
     // Luz Direcional Principal (Sol / Holofote Superior) com Sombras
-    this.dirLight = new THREE.DirectionalLight(0xfff6e4, 1.8);
+    this.dirLight = new THREE.DirectionalLight(0xd9d1bd, 0.96);
     this.dirLight.position.set(400, 700, 300);
     this.dirLight.castShadow = true;
     this.dirLight.shadow.mapSize.width = 2048;
@@ -1160,23 +1166,25 @@ class ThreeRenderer {
     this.scene.add(this.dirLight);
 
     // Luz de realce azulada (Contraste militar frio)
-    const rimLight = new THREE.DirectionalLight(0x286095, 0.8);
+    const rimLight = new THREE.DirectionalLight(0x4c7895, 0.36);
     rimLight.position.set(-500, 300, -400);
     this.scene.add(rimLight);
 
     // Holofote tático que acompanha o jogador (Luma-globe da armadura)
-    this.playerLight = new THREE.PointLight(0xfff5e6, 2.0, 600);
+    this.playerLight = new THREE.PointLight(0xd8d0bd, 0.46, 380);
     this.playerLight.position.set(0, 50, 0);
     this.scene.add(this.playerLight);
   }
 
   resize() {
-    this.camera.aspect = window.innerWidth / window.innerHeight;
+    if (!this.renderer || !this.camera) return;
+    this.camera.aspect = window.innerWidth / Math.max(1, window.innerHeight);
     this.camera.updateProjectionMatrix();
     this.renderer.setSize(window.innerWidth, window.innerHeight);
   }
 
   setGraphicsQuality(preset) {
+    if (!this.renderer) return;
     if (preset === 'low') {
       this.renderer.shadowMap.enabled = false;
       this.renderer.setPixelRatio(0.85);
@@ -1405,6 +1413,31 @@ class ModelFactory {
     group.add(weaponGroup);
     group.weaponGroup = weaponGroup;
 
+    // Espada de energia: punho ceramítico, guarda metálica e lâmina azul emissiva.
+    const powerSword = new THREE.Group();
+    const hiltMat = new THREE.MeshStandardMaterial({ color: 0x171c26, metalness: 0.82, roughness: 0.28 });
+    const hilt = new THREE.Mesh(new THREE.CylinderGeometry(1.8, 2.2, 10, 8), hiltMat);
+    hilt.rotation.x = Math.PI / 2;
+    powerSword.add(hilt);
+    const guard = new THREE.Mesh(new THREE.BoxGeometry(10, 2.5, 3), goldMat);
+    guard.position.z = 5;
+    powerSword.add(guard);
+    const bladeMat = new THREE.MeshStandardMaterial({ color: 0x9deeff, emissive: 0x168cff, emissiveIntensity: 2.2, metalness: 0.35, roughness: 0.18 });
+    const blade = new THREE.Mesh(new THREE.BoxGeometry(4.2, 2.2, 28), bladeMat);
+    blade.position.z = 20;
+    powerSword.add(blade);
+    const bladeCore = new THREE.Mesh(new THREE.BoxGeometry(1.25, 2.35, 25), new THREE.MeshBasicMaterial({ color: 0xe6ffff }));
+    bladeCore.position.z = 20;
+    powerSword.add(bladeCore);
+    const pommel = new THREE.Mesh(new THREE.SphereGeometry(2.4, 8, 6), goldMat);
+    pommel.position.z = -5;
+    powerSword.add(pommel);
+    powerSword.position.set(-13, 16, 8);
+    powerSword.rotation.x = -0.18;
+    powerSword.visible = false;
+    group.add(powerSword);
+    group.powerSword = powerSword;
+
     // 6. Pernas e Greaves Blindadas
     const legGeo = new THREE.BoxGeometry(8, 18, 9);
     const legL = new THREE.Mesh(legGeo, armorMat);
@@ -1561,6 +1594,26 @@ class ModelFactory {
 
     group.legs = [legL, legR];
     group.feet = [footL, footR];
+
+    // Detalhes extras de blindagem: placas de ombro, rebites e luzes de estado.
+    const panelMat = new THREE.MeshStandardMaterial({ color: 0x29364a, metalness: 0.72, roughness: 0.42 });
+    const hazardMat = new THREE.MeshStandardMaterial({ color: 0xc18b2a, metalness: 0.55, roughness: 0.48 });
+    for (const side of [-1, 1]) {
+      const shoulderPlate = new THREE.Mesh(new THREE.BoxGeometry(18, 16, 24), panelMat);
+      shoulderPlate.position.set(side * 35, 68, -1);
+      shoulderPlate.rotation.z = side * -0.12;
+      shoulderPlate.castShadow = true;
+      group.add(shoulderPlate);
+      const rivet = new THREE.Mesh(new THREE.SphereGeometry(1.5, 8, 6), goldTrimMat);
+      rivet.position.set(side * 35, 73, 11);
+      group.add(rivet);
+      const statusLight = new THREE.Mesh(new THREE.BoxGeometry(3, 3, 1.5), visorGlowMat);
+      statusLight.position.set(side * 19, 67, 23.5);
+      group.add(statusLight);
+    }
+    const frontHazard = new THREE.Mesh(new THREE.BoxGeometry(20, 3, 2), hazardMat);
+    frontHazard.position.set(0, 34, 25.5);
+    group.add(frontHazard);
 
     return group;
   }
@@ -1735,28 +1788,72 @@ class ModelFactory {
     canvas.height = 512;
     const ctx = canvas.getContext('2d');
 
-    // Base de aço escovado
-    ctx.fillStyle = '#141822';
+    // Base de aço escovado com variação tonal e desgaste industrial.
+    ctx.fillStyle = '#111722';
     ctx.fillRect(0, 0, 512, 512);
+    for (let i = 0; i < 900; i++) {
+      const x = Math.random() * 512;
+      const y = Math.random() * 512;
+      const alpha = 0.025 + Math.random() * 0.07;
+      ctx.fillStyle = `rgba(${Math.random() > 0.5 ? '125,145,170' : '0,0,0'},${alpha})`;
+      ctx.fillRect(x, y, 2 + Math.random() * 24, 1);
+    }
 
-    // Borda metálica da placa
-    ctx.strokeStyle = '#273347';
-    ctx.lineWidth = 6;
-    ctx.strokeRect(3, 3, 506, 506);
-
-    // Grelhas e painel central
-    ctx.strokeStyle = '#1b2331';
+    // Placas modulares com chanfros, linhas técnicas e sulcos de manutenção.
+    ctx.fillStyle = '#171f2b';
+    ctx.fillRect(12, 12, 488, 488);
+    ctx.strokeStyle = '#354254';
+    ctx.lineWidth = 5;
+    ctx.strokeRect(5, 5, 502, 502);
+    ctx.strokeStyle = '#080c12';
+    ctx.lineWidth = 2;
+    ctx.strokeRect(16, 16, 480, 480);
+    ctx.strokeStyle = '#273447';
     ctx.lineWidth = 3;
-    ctx.strokeRect(64, 64, 384, 384);
+    ctx.strokeRect(58, 58, 396, 396);
+    ctx.strokeRect(86, 86, 340, 340);
 
-    // Parafusos nos cantos das placas
-    ctx.fillStyle = '#7a8ba6';
+    // Divisões da placa e grelhas de ventilação.
+    ctx.strokeStyle = '#202c3b';
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.moveTo(256, 18); ctx.lineTo(256, 494);
+    ctx.moveTo(18, 256); ctx.lineTo(494, 256);
+    ctx.stroke();
+    for (const side of [0, 1]) {
+      for (let i = 0; i < 9; i++) {
+        ctx.fillStyle = '#080c12';
+        ctx.fillRect(104 + i * 9, side ? 454 : 48, 5, 14);
+        ctx.fillRect(side ? 454 : 48, 104 + i * 9, 14, 5);
+      }
+    }
+
+    // Faixas de segurança amarelo-imperiais nos cantos.
+    ctx.save();
+    ctx.strokeStyle = '#80672f';
+    ctx.lineWidth = 9;
+    ctx.setLineDash([12, 8]);
+    ctx.strokeRect(28, 28, 456, 456);
+    ctx.restore();
+
+    // Símbolo técnico central discreto.
+    ctx.strokeStyle = 'rgba(190,155,76,0.28)';
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.arc(256, 256, 38, 0, Math.PI * 2);
+    ctx.arc(256, 256, 29, 0, Math.PI * 2);
+    ctx.moveTo(256, 210); ctx.lineTo(256, 302);
+    ctx.moveTo(210, 256); ctx.lineTo(302, 256);
+    ctx.stroke();
+
+    // Parafusos metálicos com núcleo escuro.
     const rivets = [20, 492];
     rivets.forEach(rx => {
       rivets.forEach(ry => {
-        ctx.beginPath();
-        ctx.arc(rx, ry, 6, 0, Math.PI * 2);
-        ctx.fill();
+        ctx.fillStyle = '#8998ad';
+        ctx.beginPath(); ctx.arc(rx, ry, 6, 0, Math.PI * 2); ctx.fill();
+        ctx.fillStyle = '#242d3a';
+        ctx.beginPath(); ctx.arc(rx, ry, 2.5, 0, Math.PI * 2); ctx.fill();
       });
     });
 
@@ -2068,6 +2165,76 @@ class Projectile3D {
   }
 }
 
+// Colisão circular simples para o cenário 3D (movimento no plano X/Z).
+// Inclui os quatro pilares centrais e mantém os personagens dentro da arena.
+function resolveArenaCollision(entity, game, collideWithEnemies = false) {
+  const radius = entity.radius || 20;
+  // Colisores acompanham os objetos sólidos do mapa ativo. Isso evita colisões
+  // fantasmas com pilares do cenário antigo que já não são visíveis.
+  const obstacles = game && game.mapColliders ? game.mapColliders : [];
+  for (const o of obstacles) {
+    if (o.type === 'circle') {
+      let dx = entity.x - o.x, dz = entity.z - o.z;
+      let dist = Math.hypot(dx, dz);
+      const minDist = radius + o.r;
+      if (dist < minDist) {
+        if (dist < 0.001) { dx = 1; dz = 0; dist = 1; }
+        const push = minDist - dist;
+        entity.x += (dx / dist) * push;
+        entity.z += (dz / dist) * push;
+      }
+      continue;
+    }
+    // Círculo contra retângulo orientado (OBB): o colisor usa a mesma
+    // rotação do objeto visível, evitando os cantos fantasma das barricadas inclinadas.
+    const halfW = o.w / 2, halfD = o.d / 2;
+    const rot = Number(o.r) || 0;
+    const cos = Math.cos(rot), sin = Math.sin(rot);
+    const offX = entity.x - o.x, offZ = entity.z - o.z;
+    let localX = offX * cos - offZ * sin;
+    let localZ = offX * sin + offZ * cos;
+    const nearestX = Math.max(-halfW, Math.min(localX, halfW));
+    const nearestZ = Math.max(-halfD, Math.min(localZ, halfD));
+    let dx = localX - nearestX, dz = localZ - nearestZ;
+    const dist = Math.hypot(dx, dz);
+    if (dist < radius) {
+      if (dist > 0.001) {
+        const push = radius - dist;
+        localX += dx / dist * push;
+        localZ += dz / dist * push;
+      } else {
+        const left = Math.abs(localX + halfW);
+        const right = Math.abs(halfW - localX);
+        const top = Math.abs(localZ + halfD);
+        const bottom = Math.abs(halfD - localZ);
+        const m = Math.min(left, right, top, bottom);
+        if (m === left) localX = -halfW - radius;
+        else if (m === right) localX = halfW + radius;
+        else if (m === top) localZ = -halfD - radius;
+        else localZ = halfD + radius;
+      }
+      entity.x = o.x + localX * cos + localZ * sin;
+      entity.z = o.z - localX * sin + localZ * cos;
+    }
+  }
+  if (collideWithEnemies && game && game.enemies) {
+    for (const enemy of game.enemies) {
+      if (enemy.toRemove || enemy === entity) continue;
+      let dx = entity.x - enemy.x, dz = entity.z - enemy.z;
+      let dist = Math.hypot(dx, dz);
+      const minDist = radius + (enemy.radius || 16);
+      if (dist < minDist) {
+        if (dist < 0.001) { dx = 1; dz = 0; dist = 1; }
+        const push = minDist - dist;
+        entity.x += (dx / dist) * push;
+        entity.z += (dz / dist) * push;
+      }
+    }
+  }
+  entity.x = Math.max(-1090 + radius, Math.min(1090 - radius, entity.x));
+  entity.z = Math.max(-910 + radius, Math.min(910 - radius, entity.z));
+}
+
 /* ==========================================================================
    8. JOGADOR: MODO SPACE MARINE (ADEPTUS ASTARTES)
    Controles completos: WASD, Sprint, Mira 360°, Esquiva (I-Frames),
@@ -2108,6 +2275,7 @@ class SpaceMarinePlayer {
 
     this.isReloading = false;
     this.reloadTimer = 0;
+    this.reloadWeapon = null;
     this.walkCycle = 0;
     this.lastFireTime = 0;
 
@@ -2252,15 +2420,19 @@ class SpaceMarinePlayer {
     if (slotNumber === this.activeSlot || !this.weapons[slotNumber]) return;
     this.activeSlot = slotNumber;
     this.isReloading = false;
+    this.reloadWeapon = null;
+    this.reloadTimer = 0;
     game.sound.playBolter();
     game.updateHUDWeapons();
   }
 
   reload(game) {
     const w = this.weapons[this.activeSlot];
-    if (!w.mag || this.isReloading || w.mag >= w.maxMag || w.ammo <= 0) return;
+    // mag == 0 é um pente vazio válido; não usar `!w.mag`, pois isso bloqueia a recarga.
+    if (!w || w.arc || w.mag === undefined || w.mag === null || this.isReloading || w.mag >= w.maxMag || w.ammo <= 0) return;
     this.isReloading = true;
-    this.reloadTimer = w.reloadTime;
+    this.reloadWeapon = w; // mantém referência à arma que iniciou a recarga
+    this.reloadTimer = Math.max(0.1, Number(w.reloadTime) || 1.2);
     game.sound.playBolter();
     game.updateHUDAmmo();
   }
@@ -2343,6 +2515,10 @@ class SpaceMarinePlayer {
   }
 
   update(dt, game) {
+    if (this.model) {
+      if (this.model.powerSword) this.model.powerSword.visible = this.activeSlot === 3;
+      if (this.model.weaponGroup) this.model.weaponGroup.visible = this.activeSlot !== 3;
+    }
     // Cooldowns
     if (this.dodgeCooldown > 0) this.dodgeCooldown -= dt;
     if (this.parryCooldown > 0) this.parryCooldown -= dt;
@@ -2365,11 +2541,14 @@ class SpaceMarinePlayer {
       this.reloadTimer -= dt;
       if (this.reloadTimer <= 0) {
         this.isReloading = false;
-        const w = this.weapons[this.activeSlot];
-        const needed = w.maxMag - w.mag;
-        const toLoad = Math.min(needed, w.ammo);
-        w.mag += toLoad;
-        w.ammo -= toLoad;
+        const w = this.reloadWeapon || this.weapons[this.activeSlot];
+        if (w && !w.arc && Number.isFinite(w.ammo) && w.ammo > 0) {
+          const needed = Math.max(0, w.maxMag - w.mag);
+          const toLoad = Math.min(needed, w.ammo);
+          w.mag += toLoad;
+          w.ammo -= toLoad;
+        }
+        this.reloadWeapon = null;
         game.updateHUDAmmo();
       }
     }
@@ -2419,6 +2598,7 @@ class SpaceMarinePlayer {
     // Limites de Arena
     this.x = Math.max(-1100, Math.min(1100, this.x));
     this.z = Math.max(-950, Math.min(950, this.z));
+    resolveArenaCollision(this, game, true);
 
     // Rotação para mirar onde o mouse/toque está no mundo
     this.angle = game.mouseWorldAngle;
@@ -2636,6 +2816,7 @@ class DreadnoughtPlayer {
 
     this.x = Math.max(-1100, Math.min(1100, this.x));
     this.z = Math.max(-950, Math.min(950, this.z));
+    resolveArenaCollision(this, game, false);
 
     this.angle = game.mouseWorldAngle;
     this.model.position.set(this.x, 0, this.z);
@@ -2664,8 +2845,9 @@ class Enemy3D {
     this.maxHp = this.config.hp;
     this.hp = this.maxHp;
     this.armor = this.config.armor || 0;
-    this.speed = this.config.speed;
-    this.damage = this.config.damage;
+    // Campanha Space Marine: inimigos ameaçadores sem dano ou perseguição excessivos.
+    this.speed = this.config.speed * 0.88;
+    this.damage = this.config.damage * 0.82;
     this.radius = this.config.radius;
     this.score = this.config.score;
 
@@ -2780,6 +2962,19 @@ class Enemy3D {
     // Movimentação em direção ao jogador
     this.x += Math.cos(moveDir) * this.speed * dt;
     this.z += Math.sin(moveDir) * this.speed * dt;
+    // Inimigos se separam entre si para evitar que uma horda vire uma única pilha.
+    resolveArenaCollision(this, game, true);
+    // No modo Dreadnought, mantém uma zona física ao redor do chassi: inimigos
+    // podem cercar e atacar, mas não entram no volume visual do mecha.
+    if (game.mode === 'DREADNOUGHT' || game.mode === 'DREAD') {
+      const dxP = this.x - player.x, dzP = this.z - player.z;
+      const dP = Math.hypot(dxP, dzP) || 0.001;
+      const safeRadius = (player.radius || 36) + (this.radius || 16) + 24;
+      if (dP < safeRadius) {
+        this.x = player.x + dxP / dP * safeRadius;
+        this.z = player.z + dzP / dP * safeRadius;
+      }
+    }
 
     this.model.position.set(this.x, 0, this.z);
     this.model.rotation.y = -this.angle + Math.PI / 2;
@@ -3086,17 +3281,17 @@ class CombatDirector {
       for (let i = 0; i < 6; i++) this.waveSpawnQueue.push('cultist');
       for (let i = 0; i < 3; i++) this.waveSpawnQueue.push('termagant');
     } else if (waveNum === 2) {
-      for (let i = 0; i < 6; i++) this.waveSpawnQueue.push('termagant');
-      for (let i = 0; i < 4; i++) this.waveSpawnQueue.push('hormagaunt');
+      for (let i = 0; i < 5; i++) this.waveSpawnQueue.push('termagant');
+      for (let i = 0; i < 3; i++) this.waveSpawnQueue.push('hormagaunt');
       for (let i = 0; i < 2; i++) this.waveSpawnQueue.push('chaos_marine');
     } else if (waveNum === 3) {
-      for (let i = 0; i < 8; i++) this.waveSpawnQueue.push('hormagaunt');
-      for (let i = 0; i < 4; i++) this.waveSpawnQueue.push('tyranid_warrior');
-      for (let i = 0; i < 3; i++) this.waveSpawnQueue.push('possessed');
+      for (let i = 0; i < 6; i++) this.waveSpawnQueue.push('hormagaunt');
+      for (let i = 0; i < 3; i++) this.waveSpawnQueue.push('tyranid_warrior');
+      for (let i = 0; i < 2; i++) this.waveSpawnQueue.push('possessed');
     } else if (waveNum === 4) {
-      for (let i = 0; i < 8; i++) this.waveSpawnQueue.push('chaos_marine');
-      for (let i = 0; i < 6; i++) this.waveSpawnQueue.push('ravener');
-      for (let i = 0; i < 2; i++) this.waveSpawnQueue.push('carnifex');
+      for (let i = 0; i < 6; i++) this.waveSpawnQueue.push('chaos_marine');
+      for (let i = 0; i < 4; i++) this.waveSpawnQueue.push('ravener');
+      for (let i = 0; i < 1; i++) this.waveSpawnQueue.push('carnifex');
     } else if (waveNum === 5) {
       // Chefe Final: Chaos Champion
       this.waveSpawnQueue.push('chaos_champion');
@@ -3180,10 +3375,42 @@ window.CombatDirector = CombatDirector;
    15. CONTROLADOR GERAL DO JOGO (GAME ENGINE)
    Orquestra os dois modos de jogo, loop principal, eventos e interface GSAP.
    ========================================================================== */
+function createGrungeTexture(base = '#777777', accent = '#343434', size = 256) {
+  if (typeof document === 'undefined') return null;
+  const canvas = document.createElement('canvas');
+  canvas.width = canvas.height = size;
+  const ctx = canvas.getContext('2d');
+  ctx.fillStyle = base; ctx.fillRect(0, 0, size, size);
+  // Ruído e riscos gerados proceduralmente para quebrar o aspecto plástico.
+  for (let i = 0; i < 950; i++) {
+    const alpha = 0.04 + Math.random() * 0.2;
+    ctx.globalAlpha = alpha;
+    ctx.fillStyle = Math.random() > 0.55 ? accent : '#d0c8b3';
+    const w = 1 + Math.random() * 18, h = 1 + Math.random() * 4;
+    ctx.fillRect(Math.random() * size, Math.random() * size, w, h);
+  }
+  ctx.globalAlpha = 0.22;
+  ctx.strokeStyle = accent; ctx.lineWidth = 2;
+  for (let y = 16; y < size; y += 64) {
+    ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(size, y); ctx.stroke();
+  }
+  ctx.globalAlpha = 1;
+  const texture = new THREE.CanvasTexture(canvas);
+  texture.wrapS = texture.wrapT = THREE.RepeatWrapping;
+  texture.repeat.set(5, 4);
+  texture.colorSpace = THREE.SRGBColorSpace;
+  return texture;
+}
+
 class Game {
   constructor() {
     this.canvas = document.getElementById('threeCanvas');
     this.renderer = new ThreeRenderer(this.canvas);
+    // Se WebGL falhar, o overlay de erro já foi exibido; não continue inicializando a cena.
+    if (!this.renderer || !this.renderer.renderer || !this.renderer.scene || !this.renderer.camera) {
+      this.initializationFailed = true;
+      return;
+    }
     this.sound = new AudioManager();
     this.particles = new ParticleSystem3D(this.renderer.scene);
     this.minimap = new MinimapRenderer(document.getElementById('minimapCanvas'));
@@ -3210,6 +3437,7 @@ class Game {
     this.touchMoveZ = 0;
 
     this.initEnvironment();
+    this.initModeMaps();
     this.initEvents();
     this.initDustBackground();
   }
@@ -3243,8 +3471,99 @@ class Game {
     pillar4.position.set(300, 40, 200);
     [pillar1, pillar2, pillar3, pillar4].forEach(p => this.renderer.scene.add(p));
 
+    // Cenografia imperial: colunas reforçadas, trilhos luminosos, selo central e zonas de perigo.
+    this.createArenaDecorations();
+
     // Barris Explosivos
     this.respawnBarrels();
+  }
+
+
+  createArenaDecorations() {
+    const scene = this.renderer.scene;
+    const steel = new THREE.MeshStandardMaterial({ color: 0x252e3d, metalness: 0.82, roughness: 0.34 });
+    const darkSteel = new THREE.MeshStandardMaterial({ color: 0x090d14, metalness: 0.72, roughness: 0.52 });
+    const gold = new THREE.MeshStandardMaterial({ color: 0x9a7738, metalness: 0.78, roughness: 0.3 });
+    const cyan = new THREE.MeshStandardMaterial({ color: 0x00b9d4, emissive: 0x006b80, emissiveIntensity: 1.15, metalness: 0.25, roughness: 0.25 });
+    const red = new THREE.MeshStandardMaterial({ color: 0x9e1825, emissive: 0x3a050a, emissiveIntensity: 0.65, metalness: 0.45, roughness: 0.35 });
+
+    // Trilhos técnicos luminosos próximos ao perímetro, sem encobrir a área jogável.
+    const addBox = (w, h, d, material, x, y, z, castShadow = false) => {
+      const mesh = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), material);
+      mesh.position.set(x, y, z);
+      mesh.castShadow = castShadow;
+      mesh.receiveShadow = true;
+      scene.add(mesh);
+      return mesh;
+    };
+    addBox(2180, 2, 5, cyan, 0, 1.5, -930);
+    addBox(2180, 2, 5, cyan, 0, 1.5, 930);
+    addBox(5, 2, 1780, cyan, -1130, 1.5, 0);
+    addBox(5, 2, 1780, cyan, 1130, 1.5, 0);
+
+    // Contrafortes góticos e colunas em pares ao longo das paredes.
+    const columnPositions = [];
+    for (const z of [-820, -560, 0, 560, 820]) {
+      columnPositions.push({ x: -1080, z }, { x: 1080, z });
+    }
+    for (const x of [-820, -540, 0, 540, 820]) {
+      columnPositions.push({ x, z: -880 }, { x, z: 880 });
+    }
+    for (const p of columnPositions) {
+      const base = new THREE.Mesh(new THREE.BoxGeometry(58, 12, 58), darkSteel);
+      base.position.set(p.x, 6, p.z);
+      scene.add(base);
+      const shaft = new THREE.Mesh(new THREE.CylinderGeometry(17, 23, 112, 8), steel);
+      shaft.position.set(p.x, 68, p.z);
+      shaft.castShadow = true; shaft.receiveShadow = true;
+      scene.add(shaft);
+      const collar = new THREE.Mesh(new THREE.CylinderGeometry(25, 25, 9, 8), gold);
+      collar.position.set(p.x, 120, p.z);
+      scene.add(collar);
+      const cap = new THREE.Mesh(new THREE.BoxGeometry(54, 10, 54), darkSteel);
+      cap.position.set(p.x, 130, p.z);
+      cap.castShadow = true;
+      scene.add(cap);
+      const lumen = new THREE.Mesh(new THREE.BoxGeometry(3, 52, 3), red);
+      lumen.position.set(p.x, 69, p.z + 19);
+      scene.add(lumen);
+    }
+
+    // Brasões circulares no chão: anéis de metal e cruz imperial.
+    const seal = new THREE.Group();
+    const ringMat = new THREE.MeshStandardMaterial({ color: 0x8b6b32, metalness: 0.8, roughness: 0.3, emissive: 0x211604 });
+    for (const radius of [95, 112]) {
+      const ring = new THREE.Mesh(new THREE.TorusGeometry(radius, radius === 95 ? 2.5 : 1.4, 8, 72), ringMat);
+      ring.rotation.x = -Math.PI / 2;
+      ring.position.y = 1.1;
+      seal.add(ring);
+    }
+    const crossH = new THREE.Mesh(new THREE.BoxGeometry(112, 1.2, 5), gold);
+    crossH.position.y = 1.2;
+    const crossV = new THREE.Mesh(new THREE.BoxGeometry(5, 1.2, 112), gold);
+    crossV.position.y = 1.2;
+    seal.add(crossH, crossV);
+    scene.add(seal);
+
+    // Placas de advertência com faixas diagonais nos quatro quadrantes.
+    const hazardMat = new THREE.MeshStandardMaterial({ color: 0xc49a43, metalness: 0.45, roughness: 0.45 });
+    for (const p of [{x:-720,z:-720},{x:720,z:-720},{x:-720,z:720},{x:720,z:720}]) {
+      const pad = addBox(120, 1, 48, darkSteel, p.x, 0.7, p.z);
+      for (let i = -2; i <= 2; i++) {
+        const stripe = addBox(7, 1.4, 48, hazardMat, p.x + i * 22, 1.6, p.z);
+        stripe.rotation.y = 0.28;
+      }
+      const beacon = new THREE.Mesh(new THREE.BoxGeometry(22, 5, 22), p.z < 0 ? red : cyan);
+      beacon.position.set(p.x, 4, p.z + (p.x < 0 ? 35 : -35));
+      scene.add(beacon);
+    }
+
+    // Grandes placas de reforço e guias de orientação no centro da arena.
+    for (const z of [-430, 430]) {
+      addBox(720, 1.1, 3, gold, 0, 0.8, z);
+      addBox(3, 1.1, 180, gold, -360, 0.8, z > 0 ? 340 : -340);
+      addBox(3, 1.1, 180, gold, 360, 0.8, z > 0 ? 340 : -340);
+    }
   }
 
   respawnBarrels() {
@@ -3262,6 +3581,286 @@ class Game {
       { x: 0, z: -550 }
     ];
     coords.forEach(c => this.mapBarrels.push(new Barrel3D(this.renderer.scene, c.x, c.z)));
+  }
+
+
+  // Dois cenários próprios: selva alagada/refinaria de promethium (MARINE)
+  // e pátio de fundição industrial para o Dreadnought. Inspirados no clima de Inferno.
+  initModeMaps() {
+    const scene = this.renderer.scene;
+    this.baseArenaObjects = scene.children.slice();
+    // Esconde apenas o cenário antigo; NUNCA esconda as luzes globais.
+    // Ocultar AmbientLight/DirectionalLight fazia os dois mapas ficarem quase pretos.
+    this.baseArenaObjects.forEach(o => {
+      const isLight = o.isLight === true;
+      o.visible = isLight;
+    });
+    this.modeMaps = { MARINE: new THREE.Group(), DREADNOUGHT: new THREE.Group() };
+    scene.add(this.modeMaps.MARINE, this.modeMaps.DREADNOUGHT);
+    this.buildInfernoMap(this.modeMaps.MARINE);
+    this.buildDreadnoughtMap(this.modeMaps.DREADNOUGHT);
+    this.modeMaps.MARINE.visible = false;
+    this.modeMaps.DREADNOUGHT.visible = false;
+  }
+
+  buildInfernoMap(group) {
+    const add = (geo, mat, x, y, z, ry = 0) => {
+      const m = new THREE.Mesh(geo, mat); m.position.set(x,y,z); m.rotation.y = ry;
+      m.castShadow = true; m.receiveShadow = true; group.add(m); return m;
+    };
+    const groundTex = createGrungeTexture('#515844', '#2b3127');
+    const mudTex = createGrungeTexture('#665744', '#30291f');
+    const concreteTex = createGrungeTexture('#777c7b', '#424746');
+    const metalTex = createGrungeTexture('#59636a', '#20282d');
+    const ground = new THREE.MeshStandardMaterial({color:0x656957, map:groundTex, bumpMap:groundTex, bumpScale:7, roughness:0.98, metalness:0.01});
+    const mud = new THREE.MeshStandardMaterial({color:0x62503b, map:mudTex, bumpMap:mudTex, bumpScale:11, roughness:1});
+    const concrete = new THREE.MeshStandardMaterial({color:0x777b78, map:concreteTex, bumpMap:concreteTex, bumpScale:4, roughness:0.9, metalness:0.08});
+    const metal = new THREE.MeshStandardMaterial({color:0x778187, map:metalTex, bumpMap:metalTex, bumpScale:2.5, roughness:0.42, metalness:0.72});
+    const gold = new THREE.MeshStandardMaterial({color:0xb68a43, roughness:0.42, metalness:0.72});
+    const promethium = new THREE.MeshStandardMaterial({color:0xb64d20, emissive:0x7c1b05, emissiveIntensity:0.85, roughness:0.3});
+    const toxic = new THREE.MeshStandardMaterial({color:0x617a3b, map:groundTex, emissive:0x101b08, emissiveIntensity:0.25, roughness:0.86});
+    const swampFloor = add(new THREE.PlaneGeometry(2400,2000), ground,0,-2,0); // chão lamacento
+    swampFloor.rotation.x = -Math.PI / 2;
+    // Faixas de lama, trilhas de veículos e charcos.
+    for (let i=0;i<11;i++) add(new THREE.BoxGeometry(2400,0.8,24+(i%3)*14),mud,0,-0.8,-850+i*170,0.02*(i%2));
+    for (const x of [-930,-720,720,930]) {
+      add(new THREE.CylinderGeometry(24,34,170,7),toxic,x,84,-420+(Math.abs(x)%3)*220);
+      add(new THREE.ConeGeometry(55,110,7),ground,x,220,-420+(Math.abs(x)%3)*220);
+    }
+    // Bunkers destruídos e barricadas Astra Militarum.
+    for (const b of [{x:-760,z:-570,r:-0.12},{x:760,z:560,r:0.18},{x:-880,z:160,r:0.08}]) {
+      add(new THREE.BoxGeometry(250,105,150),concrete,b.x,52,b.z,b.r);
+      add(new THREE.BoxGeometry(265,13,162),metal,b.x,111,b.z,b.r);
+      add(new THREE.BoxGeometry(75,50,12),metal,b.x,43,b.z+78,b.r);
+      for(let i=-2;i<=2;i++) add(new THREE.BoxGeometry(9,36,9),gold,b.x+i*35,19,b.z+87,b.r);
+    }
+    // Grande refinaria de promethium no fundo: tanques, tubulações e chaminés.
+    for (const t of [{x:-520,z:-790,r:0},{x:-260,z:-820,r:0},{x:300,z:-810,r:0},{x:560,z:-760,r:0}]) {
+      add(new THREE.CylinderGeometry(72,82,190,12),metal,t.x,95,t.z);
+      add(new THREE.CylinderGeometry(76,76,10,12),gold,t.x,185,t.z);
+      add(new THREE.CylinderGeometry(18,23,260,10),concrete,t.x+95,130,t.z-35);
+      add(new THREE.CylinderGeometry(22,22,5,10),promethium,t.x+95,265,t.z-35);
+    }
+    // Tubulações concentradas no fundo da refinaria: não atravessam a linha de visão
+    // nem cortam a área principal de combate. O eixo do cilindro é girado para X.
+    for (const z of [-900, -845]) {
+      const pipe = add(new THREE.CylinderGeometry(9,9,1050,12),metal,0,76,z);
+      pipe.rotation.z = Math.PI / 2;
+      for (const x of [-500, -250, 0, 250, 500]) {
+        const support = add(new THREE.BoxGeometry(12,34,18),concrete,x,48,z);
+      }
+      for (const x of [-500, 500]) {
+        const collar = add(new THREE.CylinderGeometry(13,13,7,12),gold,x,76,z);
+        collar.rotation.z = Math.PI / 2;
+      }
+    }
+    // Torres de geradores e linhas de combustível na área central jogável.
+    for (const g of [{x:-410,z:-150},{x:410,z:-150},{x:-410,z:260},{x:410,z:260}]) {
+      add(new THREE.BoxGeometry(94,95,94),metal,g.x,47,g.z);
+      add(new THREE.BoxGeometry(106,9,106),gold,g.x,96,g.z);
+      add(new THREE.CylinderGeometry(24,28,110,8),concrete,g.x,150,g.z);
+      add(new THREE.CylinderGeometry(16,16,5,8),promethium,g.x,208,g.z);
+      for (const dx of [-36,36]) add(new THREE.BoxGeometry(6,58,7),promethium,g.x+dx,45,g.z+49);
+    }
+    // Torres de iluminação, focos de fogo e barricadas de borda.
+    for (const x of [-1080,-820,820,1080]) {
+      add(new THREE.BoxGeometry(16,210,16),metal,x,105,0);
+      add(new THREE.BoxGeometry(72,10,22),gold,x,210,0);
+      const lamp = new THREE.PointLight(0xff4b18,1.6,360); lamp.position.set(x,195,0); group.add(lamp);
+    }
+    for (const p of [{x:-600,z:650},{x:0,z:760},{x:600,z:650},{x:-700,z:-60},{x:700,z:-60}]) {
+      add(new THREE.BoxGeometry(150,28,32),concrete,p.x,14,p.z,0.25);
+      add(new THREE.BoxGeometry(120,3,5),promethium,p.x,30,p.z);
+    }
+    // Charcos rasos com bordas de lama e reflexos discretos para dar profundidade ao terreno.
+    const puddleMat = new THREE.MeshStandardMaterial({ color: 0x34484a, roughness: 0.19, metalness: 0.28, transparent: true, opacity: 0.82 });
+    const puddleRim = new THREE.MeshStandardMaterial({ color: 0x514532, roughness: 0.98 });
+    const puddles = [
+      {x:-860,z:-350,rx:95,rz:42},{x:850,z:300,rx:110,rz:48},
+      {x:-610,z:500,rx:78,rz:36},{x:630,z:-500,rx:88,rz:40},
+      {x:80,z:850,rx:130,rz:45},{x:-80,z:-900,rx:120,rz:40}
+    ];
+    for (const p of puddles) {
+      const rim = add(new THREE.CircleGeometry(1, 32), puddleRim, p.x, -0.15, p.z);
+      rim.rotation.x = -Math.PI / 2; rim.scale.set(p.rx * 1.13, p.rz * 1.13, 1);
+      const water = add(new THREE.CircleGeometry(1, 40), puddleMat, p.x, -0.05, p.z);
+      water.rotation.x = -Math.PI / 2; water.scale.set(p.rx, p.rz, 1);
+    }
+
+    // Vegetação alienígena baixa nas margens: silhuetas de folhas e fungos, sem fechar as rotas.
+    const leafMat = new THREE.MeshStandardMaterial({ color: 0x465b32, roughness: 0.92 });
+    const leafLight = new THREE.MeshStandardMaterial({ color: 0x56623a, roughness: 0.88 });
+    const stemMat = new THREE.MeshStandardMaterial({ color: 0x514a32, roughness: 1 });
+    const foliageSpots = [
+      [-1080,-720],[-990,-520],[-1090,360],[-970,690],[-760,820],[-520,900],
+      [1080,-700],[970,-500],[1100,360],[970,700],[760,830],[520,910],
+      [-1040,40],[1040,-30],[-860,560],[860,-590]
+    ];
+    foliageSpots.forEach(([x,z], idx) => {
+      const h = 35 + (idx % 4) * 13;
+      add(new THREE.CylinderGeometry(3, 6, h, 5), stemMat, x, h/2, z);
+      for (let j=0;j<4;j++) {
+        const leaf = add(new THREE.ConeGeometry(12 + (j%2)*5, 38 + (j%3)*8, 5), j%2 ? leafMat : leafLight, x + Math.sin(j*1.7)*13, h*0.45 + j*9, z + Math.cos(j*1.7)*13, j*0.8);
+        leaf.rotation.x = (j-1.5)*0.22;
+      }
+    });
+
+    // Entulho de guerra, placas de blindagem e sacos de areia nas laterais da arena.
+    const rubbleMat = new THREE.MeshStandardMaterial({ color: 0x555a56, map: concreteTex, bumpMap: concreteTex, bumpScale: 3, roughness: 0.96 });
+    const sandbagMat = new THREE.MeshStandardMaterial({ color: 0x625843, map: mudTex, bumpMap: mudTex, bumpScale: 2, roughness: 1 });
+    for (const wreck of [
+      {x:-900,z:-120,r:0.32},{x:900,z:110,r:-0.28},{x:-720,z:720,r:-0.4},{x:720,z:-730,r:0.35}
+    ]) {
+      add(new THREE.BoxGeometry(100, 12, 48), metal, wreck.x, 8, wreck.z, wreck.r);
+      add(new THREE.BoxGeometry(58, 8, 32), rubbleMat, wreck.x+22, 18, wreck.z-8, wreck.r+0.25);
+      add(new THREE.ConeGeometry(18, 24, 5), rubbleMat, wreck.x-28, 13, wreck.z+16, wreck.r);
+      for (let i=0;i<4;i++) add(new THREE.SphereGeometry(12, 7, 5), sandbagMat, wreck.x-38+i*23, 9, wreck.z+55, wreck.r);
+    }
+
+    // Emblemas imperiais danificados e sinalização militar nas entradas do complexo.
+    const insigniaMat = new THREE.MeshStandardMaterial({ color: 0x79663d, metalness: 0.58, roughness: 0.55 });
+    for (const side of [-1,1]) {
+      const plaque = add(new THREE.BoxGeometry(110, 70, 8), metal, side*1060, 92, -760);
+      add(new THREE.ConeGeometry(20, 48, 4), insigniaMat, side*1060, 103, -766, Math.PI);
+      add(new THREE.BoxGeometry(5, 48, 5), gold, side*1060, 92, -767);
+      // Luzes de sinalização voltadas para a arena.
+      const signal = new THREE.PointLight(0xc94b22, 0.55, 190); signal.position.set(side*1010, 100, -690); group.add(signal);
+    }
+
+    // Modelos 3D compostos: transporte blindado destruído, canhão e torres góticas.
+    // Construídos por peças separadas para criar silhuetas legíveis sem arquivos externos.
+    const armor = new THREE.MeshStandardMaterial({ color: 0x343d3c, map: metalTex, bumpMap: metalTex, bumpScale: 3.5, metalness: 0.62, roughness: 0.68 });
+    const armorEdge = new THREE.MeshStandardMaterial({ color: 0x655d49, metalness: 0.68, roughness: 0.52 });
+    const glass = new THREE.MeshStandardMaterial({ color: 0x243e43, emissive: 0x061316, emissiveIntensity: 0.3, metalness: 0.35, roughness: 0.24 });
+    const makeWreck = (x,z,rot=0) => {
+      const root = new THREE.Group(); root.position.set(x,0,z); root.rotation.y=rot; group.add(root);
+      const part=(geo,mat,px,py,pz,rx=0,ry=0,rz=0)=>{const m=new THREE.Mesh(geo,mat);m.position.set(px,py,pz);m.rotation.set(rx,ry,rz);m.castShadow=true;m.receiveShadow=true;root.add(m);return m;};
+      part(new THREE.BoxGeometry(190,34,104),armor,0,22,0,0,0,0.04);
+      part(new THREE.BoxGeometry(126,28,82),armor,-8,51,-5,0.05,0.1,-0.07);
+      part(new THREE.BoxGeometry(58,8,62),glass,-5,67,-9);
+      part(new THREE.BoxGeometry(220,8,12),armorEdge,0,10,0);
+      for(const sx of [-1,1]) for(const sz of [-1,1]) {
+        part(new THREE.CylinderGeometry(17,17,22,10),armorEdge,sx*64,13,sz*40,Math.PI/2,0,0);
+        part(new THREE.CylinderGeometry(6,6,24,8),armor,sx*64,13,sz*40,Math.PI/2,0,0);
+      }
+      part(new THREE.BoxGeometry(54,9,9),armorEdge,92,32,-5,0,0,-0.12);
+      part(new THREE.CylinderGeometry(5,7,86,8),armor,124,38,-5,0,0,Math.PI/2);
+      part(new THREE.ConeGeometry(16,28,5),armor, -86,38,38,0.3,0.2,0.8);
+    };
+    makeWreck(-870,390,0.38); makeWreck(860,-250,-0.5);
+
+    // Canhão de defesa imperial tombado junto ao perímetro, com base, escudo e tubo longo.
+    const turret = new THREE.Group(); turret.position.set(950,0,470); turret.rotation.y=-0.65; group.add(turret);
+    const turretPart=(geo,mat,x,y,z,rx=0,ry=0,rz=0)=>{const m=new THREE.Mesh(geo,mat);m.position.set(x,y,z);m.rotation.set(rx,ry,rz);m.castShadow=true;m.receiveShadow=true;turret.add(m);};
+    turretPart(new THREE.CylinderGeometry(58,70,24,10),armorEdge,0,12,0);
+    turretPart(new THREE.BoxGeometry(86,46,74),armor,0,45,0,0,0,0.05);
+    turretPart(new THREE.BoxGeometry(56,32,54),armorEdge,0,73,-4);
+    turretPart(new THREE.CylinderGeometry(10,13,110,10),armor,0,78,-68,Math.PI/2,0,0);
+    turretPart(new THREE.CylinderGeometry(16,16,9,10),armorEdge,0,78,-120,Math.PI/2,0,0);
+    for(let i=-2;i<=2;i++) turretPart(new THREE.BoxGeometry(5,30,6),armorEdge,i*15,43,39,0,0,i*0.06);
+
+    // Pórticos góticos industriais: pilares, arco segmentado e brasão central.
+    const archMat = new THREE.MeshStandardMaterial({ color: 0x484b45, map: concreteTex, bumpMap: concreteTex, bumpScale: 2, roughness: 0.94 });
+    for(const x of [-640,640]) {
+      const z=-910;
+      add(new THREE.BoxGeometry(38,210,42),archMat,x,105,z);
+      add(new THREE.BoxGeometry(62,18,58),armorEdge,x,202,z);
+      add(new THREE.ConeGeometry(24,62,4),archMat,x,242,z,Math.PI);
+    }
+    add(new THREE.BoxGeometry(1320,26,46),archMat,0,215,-910);
+    add(new THREE.ConeGeometry(40,72,4),armorEdge,0,265,-910,Math.PI);
+    add(new THREE.BoxGeometry(14,55,8),gold,0,260,-936);
+    add(new THREE.BoxGeometry(46,8,8),gold,0,264,-936);
+
+    // Limites externos escuros para que a arena tenha profundidade sem bloquear a câmera.
+    for (const z of [-990,990]) add(new THREE.BoxGeometry(2400,180,22),concrete,0,70,z);
+    for (const x of [-1190,1190]) add(new THREE.BoxGeometry(22,180,2000),concrete,x,70,0);
+  }
+
+  buildDreadnoughtMap(group) {
+    const add = (geo, mat, x, y, z, ry=0) => {
+      const m = new THREE.Mesh(geo,mat); m.position.set(x,y,z); m.rotation.y=ry;
+      m.castShadow=true; m.receiveShadow=true; group.add(m); return m;
+    };
+    const steelTex = createGrungeTexture('#69747c', '#252d33');
+    const blackTex = createGrungeTexture('#4b555c', '#171c21');
+    const steel = new THREE.MeshStandardMaterial({color:0x788185,map:steelTex,bumpMap:steelTex,bumpScale:2.8,metalness:0.72,roughness:0.4});
+    const black = new THREE.MeshStandardMaterial({color:0x5b6468,map:blackTex,bumpMap:blackTex,bumpScale:4,metalness:0.48,roughness:0.68});
+    const bronze = new THREE.MeshStandardMaterial({color:0x80602e,metalness:0.78,roughness:0.34});
+    const red = new THREE.MeshStandardMaterial({color:0x72191b,emissive:0x280304,emissiveIntensity:0.65});
+    const blue = new THREE.MeshStandardMaterial({color:0x08758a,emissive:0x003d4c,emissiveIntensity:0.75});
+    const furnace = new THREE.MeshStandardMaterial({color:0xa63c14,emissive:0x7b1b04,emissiveIntensity:1.0});
+    const foundryFloor = add(new THREE.PlaneGeometry(2400,2000),black,0,-2,0);
+    foundryFloor.rotation.x = -Math.PI / 2;
+    // Grandes linhas de montagem e pistas para a escala pesada do Dreadnought.
+    for (const z of [-760,-500,-240,240,500,760]) {
+      add(new THREE.BoxGeometry(2200,3,7),bronze,0,0.2,z);
+      add(new THREE.BoxGeometry(2200,1,2),blue,0,2,z+16);
+    }
+    // Prensas, torres de fundição e colunas massivas junto às bordas.
+    for (const x of [-1040,-760,760,1040]) for (const z of [-720,0,720]) {
+      add(new THREE.BoxGeometry(125,260,125),steel,x,130,z);
+      add(new THREE.BoxGeometry(165,22,165),black,x,265,z);
+      add(new THREE.BoxGeometry(18,145,8),red,x,135,z+66);
+      add(new THREE.CylinderGeometry(38,52,34,8),bronze,x,285,z);
+    }
+    // Reatores enormes e condutas de energia na metade traseira.
+    for (const x of [-520,-180,180,520]) {
+      add(new THREE.CylinderGeometry(62,75,240,12),steel,x,120,-780);
+      add(new THREE.CylinderGeometry(48,48,8,12),furnace,x,245,-780);
+      add(new THREE.CylinderGeometry(18,18,210,10),bronze,x+100,150,-760,0.15);
+    }
+    // Condutas de grande diâmetro junto à parede traseira; a arena central fica livre.
+    for (const z of [-900, -835]) {
+      const pipe = add(new THREE.CylinderGeometry(15,15,1000,12),steel,0,78,z);
+      pipe.rotation.z = Math.PI / 2;
+      for (const x of [-470,-235,0,235,470]) add(new THREE.BoxGeometry(18,38,22),black,x,51,z);
+      for (const x of [-470,470]) {
+        const collar = add(new THREE.CylinderGeometry(20,20,9,12),bronze,x,78,z);
+        collar.rotation.z = Math.PI / 2;
+      }
+    }
+    // Plataforma central com anéis de energia e brasão mecânico.
+    for (const r of [150,180]) {
+      const ring=add(new THREE.TorusGeometry(r,4,8,80),r===150?blue:bronze,0,2,0);
+      ring.rotation.x=-Math.PI/2;
+    }
+    add(new THREE.CylinderGeometry(92,108,8,12),black,0,3,0);
+    add(new THREE.CylinderGeometry(58,58,5,12),bronze,0,8,0);
+    // Guindastes industriais e braços de manutenção em escala de Dreadnought.
+    const craneMat = new THREE.MeshStandardMaterial({ color: 0x454b4e, map: steelTex, bumpMap: steelTex, bumpScale: 2, metalness: 0.68, roughness: 0.62 });
+    for(const side of [-1,1]) {
+      const x=side*880, z=260;
+      add(new THREE.BoxGeometry(38,300,42),craneMat,x,150,z);
+      add(new THREE.BoxGeometry(230,24,34),craneMat,x-side*92,290,z);
+      add(new THREE.BoxGeometry(14,125,14),bronze,x-side*150,218,z);
+      add(new THREE.CylinderGeometry(28,28,26,10),black,x-side*150,145,z);
+      add(new THREE.CylinderGeometry(13,13,95,8),steel,x-side*150,91,z);
+      add(new THREE.BoxGeometry(88,16,74),black,x,18,z+70);
+      for(let k=-2;k<=2;k++) add(new THREE.BoxGeometry(5,10,72),bronze,x+k*15,30,z+70);
+    }
+    // Carcaça de um servo-guindaste tombado: cabina, esteiras e braço articulado.
+    const fallen = new THREE.Group(); fallen.position.set(-780,0,-300); fallen.rotation.y=0.55; group.add(fallen);
+    const fp=(geo,mat,x,y,z,rx=0,ry=0,rz=0)=>{const m=new THREE.Mesh(geo,mat);m.position.set(x,y,z);m.rotation.set(rx,ry,rz);m.castShadow=true;m.receiveShadow=true;fallen.add(m);};
+    fp(new THREE.BoxGeometry(150,38,78),black,0,24,0,0,0,-0.1);
+    fp(new THREE.BoxGeometry(82,54,65),steel,-12,66,-4,0.12,0.1,-0.18);
+    fp(new THREE.BoxGeometry(46,28,7),blue,-12,70,-39);
+    fp(new THREE.CylinderGeometry(11,16,135,8),steel,82,68,-5,0,0,-0.85);
+    fp(new THREE.ConeGeometry(22,42,6),bronze,138,120,-5,0,0,-0.85);
+    for(const side of [-1,1]) for(let i=0;i<4;i++) fp(new THREE.CylinderGeometry(13,13,18,8),bronze,-48+i*30,14,side*43,Math.PI/2,0,0);
+
+    // Grades e barricadas baixas deixam rotas largas para o mecha.
+    for (const p of [{x:-560,z:-100},{x:560,z:-100},{x:-560,z:340},{x:560,z:340}]) {
+      add(new THREE.BoxGeometry(170,32,36),steel,p.x,16,p.z);
+      add(new THREE.BoxGeometry(130,4,5),red,p.x,34,p.z);
+    }
+    // Paredes perimetrais da fundição.
+    for (const z of [-990,990]) add(new THREE.BoxGeometry(2400,220,28),black,0,100,z);
+    for (const x of [-1190,1190]) add(new THREE.BoxGeometry(28,220,2000),black,x,100,0);
+    // Luzes de caldeira nos cantos para silhuetas dramáticas.
+    for (const p of [{x:-950,z:-850},{x:950,z:-850},{x:-950,z:850},{x:950,z:850}]) {
+      const furnaceLight = new THREE.PointLight(0xc5411e,0.95,430); furnaceLight.position.set(p.x,110,p.z); group.add(furnaceLight);
+    }
   }
 
   initEvents() {
@@ -3597,6 +4196,33 @@ class Game {
     setTimeout(() => { this._isStarting = false; }, 350);
 
     this.mode = modeName;
+    this.mapColliders = modeName === 'MARINE' ? [
+      // Bunkers: a mesma rotação do modelo e dimensões da placa superior visível.
+      {x:-760,z:-570,w:265,d:162,r:-0.12}, {x:760,z:560,w:265,d:162,r:0.18}, {x:-880,z:160,w:265,d:162,r:0.08},
+      // Geradores centrais e tanques de promethium.
+      {x:-410,z:-150,w:108,d:108}, {x:410,z:-150,w:108,d:108}, {x:-410,z:260,w:108,d:108}, {x:410,z:260,w:108,d:108},
+      {x:-520,z:-790,w:164,d:164}, {x:-260,z:-820,w:164,d:164}, {x:300,z:-810,w:164,d:164}, {x:560,z:-760,w:164,d:164},
+      // Barricadas baixas: OBB com rotação igual à geometria visual (0.25 rad).
+      {x:-600,z:650,w:150,d:32,r:0.25}, {x:0,z:760,w:150,d:32,r:0.25}, {x:600,z:650,w:150,d:32,r:0.25}, {x:-700,z:-60,w:150,d:32,r:0.25}, {x:700,z:-60,w:150,d:32,r:0.25},
+      // Postes estreitos de iluminação; removida a antiga zona fantasma de 50x70.
+      {x:-1080,z:0,w:20,d:20}, {x:-820,z:0,w:20,d:20}, {x:820,z:0,w:20,d:20}, {x:1080,z:0,w:20,d:20},
+      // Blindados destruídos e canhão tombado que são sólidos e visíveis no mapa.
+      {x:-870,z:390,w:220,d:104,r:0.38}, {x:860,z:-250,w:220,d:104,r:-0.5},
+      {x:950,z:470,w:150,d:180,r:-0.65}
+    ] : [
+      // Prensas e torres de fundição; dimensões acompanham a placa superior de 165x165.
+      ...[-1040,-760,760,1040].flatMap(x => [-720,0,720].map(z => ({x,z,w:165,d:165}))),
+      // Reatores traseiros.
+      ...[-520,-180,180,520].map(x => ({x,z:-780,w:155,d:155})),
+      // Barricadas baixas visíveis.
+      {x:-560,z:-100,w:170,d:36}, {x:560,z:-100,w:170,d:36}, {x:-560,z:340,w:170,d:36}, {x:560,z:340,w:170,d:36},
+      // Servo-guindaste tombado: retângulo orientado com a rotação do modelo.
+      {x:-780,z:-300,w:150,d:90,r:0.55}
+    ];
+    if (this.modeMaps) {
+      this.modeMaps.MARINE.visible = modeName === 'MARINE';
+      this.modeMaps.DREADNOUGHT.visible = modeName === 'DREADNOUGHT';
+    }
     this.state = 'PLAYING';
     this.score = 0;
     this.killsCount = 0;
@@ -4125,6 +4751,8 @@ class Game {
 function initGame() {
   if (window.ironVigilGame) return;
   const game = new Game();
+  // Não inicia o loop se o navegador não conseguiu criar o contexto WebGL.
+  if (!game || game.initializationFailed || !game.renderer || !game.renderer.renderer) return;
   window.ironVigilGame = game;
   const urlParams = new URLSearchParams(window.location.search);
   const autoMode = urlParams.get('mode');

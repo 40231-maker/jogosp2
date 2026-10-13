@@ -1391,3 +1391,50 @@ select {
     padding-right: calc(env(safe-area-inset-right) + 8px);
   }
 }
+
+
+/* PATCH VISUAL — arena legível e HUD adaptável em telas pequenas */
+#game-container {
+  isolation: isolate;
+  min-height: 100dvh;
+}
+#threeCanvas {
+  image-rendering: auto;
+  outline: none;
+}
+.minimap-frame {
+  border: 1px solid rgba(205, 168, 81, .82);
+  box-shadow: 0 0 0 3px rgba(5, 8, 13, .8), 0 0 24px rgba(0, 0, 0, .75), inset 0 0 18px rgba(0, 229, 255, .08);
+}
+.minimap-bezel-top {
+  text-shadow: 0 0 8px rgba(205, 168, 81, .45);
+}
+.hud-panel {
+  background-image: linear-gradient(135deg, rgba(255,255,255,.025), transparent 42%, rgba(0,0,0,.18));
+}
+@media (max-width: 900px) {
+  .hud-layer { padding: max(7px, env(safe-area-inset-top)) 8px max(8px, env(safe-area-inset-bottom)); gap: 6px; }
+  .top-right-group { gap: 6px; }
+  .minimap-frame { width: 94px; height: 94px; }
+  .score-panel { padding: 5px 7px; }
+  .hud-bottom { gap: 6px; align-items: flex-end; }
+  .vitals-panel { min-width: 0; width: min(42vw, 230px); padding: 6px 8px; }
+  .weapon-slots-bar { gap: 4px; }
+  .weapon-slot { min-width: 0; padding: 5px; }
+}
+@media (max-width: 600px) {
+  .top-left-group { max-width: 56vw; }
+  .objective-panel { max-width: 56vw; padding: 5px 7px; }
+  .objective-text { font-size: 10px; }
+  .minimap-frame { width: 76px; height: 76px; }
+  .hud-bottom { flex-wrap: wrap; align-items: flex-end; }
+  .hud-bottom-center { order: 3; width: 100%; }
+  .hud-bottom-left { order: 1; }
+  .hud-bottom-right { order: 2; }
+  .weapon-slots-bar { width: 100%; }
+  .weapon-slot .slot-key { font-size: 8px; }
+  .weapon-slot .slot-name { font-size: 10px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation-duration: .01ms !important; animation-iteration-count: 1 !important; transition-duration: .01ms !important; }
+}
